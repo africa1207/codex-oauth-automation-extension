@@ -1225,6 +1225,7 @@ let autoRunActive = false;
 let autoRunCurrentRun = 0;
 let autoRunTotalRuns = 1;
 let autoRunAttemptRun = 0;
+const VERIFICATION_POLL_MAX_ROUNDS = 9;
 const AUTO_STEP_DELAYS = {
   1: 2000,
   2: 2000,
@@ -1744,7 +1745,7 @@ async function pollFreshVerificationCode(step, state, mail, pollOverrides = {}) 
 
   let lastError = null;
   let filterAfterTimestamp = pollOverrides.filterAfterTimestamp ?? getVerificationPollPayload(step, state).filterAfterTimestamp;
-  const maxRounds = pollOverrides.maxRounds || 3;
+  const maxRounds = pollOverrides.maxRounds || VERIFICATION_POLL_MAX_ROUNDS;
 
   for (let round = 1; round <= maxRounds; round++) {
     if (round > 1) {
