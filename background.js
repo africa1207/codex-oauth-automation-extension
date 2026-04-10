@@ -1790,17 +1790,48 @@ async function executeStep1(state) {
     throw new Error('尚未配置 CPA 地址，请先在侧边栏填写。');
   }
   await addLog('步骤 1：正在打开 CPA 面板...');
-  await reuseOrCreateTab('vps-panel', state.vpsUrl, {
-    inject: ['content/utils.js', 'content/vps-panel.js'],
-    reloadIfSameUrl: true,
+
+  const injectFiles = ['content/utils.js', 'content/vps-panel.js'];
+
+  await closeConflictingTabsForSource('vps-panel', state.vpsUrl);
+
+  const tab = await chrome.tabs.create({ url: state.vpsUrl, active: true });
+  const tabId = tab.id;
+  await rememberSourceLastUrl('vps-panel', state.vpsUrl);
+
+  await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, 30000);
+    const listener = (updatedTabId, info) => {
+      if (updatedTabId === tabId && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        clearTimeout(timer);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
   });
 
-  await sendToContentScript('vps-panel', {
+  await ensureContentScriptReadyOnTab('vps-panel', tabId, {
+    inject: injectFiles,
+  });
+
+  const result = await sendToContentScriptResilient('vps-panel', {
     type: 'EXECUTE_STEP',
     step: 1,
     source: 'background',
     payload: { vpsPassword: state.vpsPassword },
+  }, {
+    timeoutMs: 30000,
+    retryDelayMs: 700,
+    logMessage: '步骤 1：CPA 面板通信未就绪，正在等待页面恢复...',
   });
+
+  if (result?.error) {
+    throw new Error(result.error);
+  }
 }
 
 // ============================================================
