@@ -6,7 +6,7 @@ const source = fs.readFileSync('background/steps/fetch-login-code.js', 'utf8');
 const globalScope = {};
 const api = new Function('self', `${source}; return self.MultiPageBackgroundStep8;`)(globalScope);
 
-test('step 8 refreshes CPA oauth via step 7 replay before submitting verification code', async () => {
+test('step 8 submits login verification directly without replaying step 7', async () => {
   const calls = {
     ensureReady: 0,
     ensureReadyOptions: [],
@@ -43,7 +43,6 @@ test('step 8 refreshes CPA oauth via step 7 replay before submitting verificatio
       url: 'https://mail.qq.com',
       navigateOnReuse: false,
     }),
-    getPanelMode: () => 'cpa',
     getState: async () => ({ email: 'user@example.com', password: 'secret' }),
     getTabId: async (sourceName) => (sourceName === 'signup-page' ? 1 : 2),
     HOTMAIL_PROVIDER: 'hotmail-api',
@@ -52,7 +51,6 @@ test('step 8 refreshes CPA oauth via step 7 replay before submitting verificatio
     LUCKMAIL_PROVIDER: 'luckmail-api',
     resolveVerificationStep: async (_step, _state, _mail, options) => {
       calls.resolveOptions = options;
-      await options.beforeSubmit({ code: '654321' });
     },
     reuseOrCreateTab: async () => {},
     setState: async () => {},
@@ -77,16 +75,15 @@ test('step 8 refreshes CPA oauth via step 7 replay before submitting verificatio
     Date.now = realDateNow;
   }
 
-  assert.equal(typeof calls.resolveOptions.beforeSubmit, 'function');
-  assert.equal(calls.ensureReady, 2);
-  assert.equal(calls.executeStep7, 1);
-  assert.deepStrictEqual(calls.sleep, [1200]);
+  assert.equal(calls.resolveOptions.beforeSubmit, undefined);
+  assert.equal(calls.ensureReady, 1);
+  assert.equal(calls.executeStep7, 0);
+  assert.deepStrictEqual(calls.sleep, []);
   assert.equal(calls.resolveOptions.filterAfterTimestamp, 123456);
   assert.equal(typeof calls.resolveOptions.getRemainingTimeMs, 'function');
   assert.equal(await calls.resolveOptions.getRemainingTimeMs({ actionLabel: '登录验证码流程' }), 5000);
   assert.equal(calls.resolveOptions.resendIntervalMs, 25000);
   assert.deepStrictEqual(calls.ensureReadyOptions, [
-    { timeoutMs: 5000 },
     { timeoutMs: 5000 },
   ]);
 });
@@ -114,7 +111,6 @@ test('step 8 disables resend interval for 2925 mailbox polling', async () => {
       url: 'https://2925.com',
       navigateOnReuse: false,
     }),
-    getPanelMode: () => 'sub2api',
     getState: async () => ({ email: 'user@example.com', password: 'secret' }),
     getTabId: async (sourceName) => (sourceName === 'signup-page' ? 1 : 2),
     HOTMAIL_PROVIDER: 'hotmail-api',

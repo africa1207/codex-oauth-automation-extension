@@ -11,7 +11,6 @@
       executeStep7,
       getOAuthFlowRemainingMs,
       getOAuthFlowStepTimeoutMs,
-      getPanelMode,
       getMailConfig,
       getState,
       getTabId,
@@ -104,9 +103,6 @@
         }
       }
 
-      const shouldRefreshOAuthBeforeSubmit = getPanelMode(state) === 'cpa';
-      let step7ReplayCompleted = false;
-
       await resolveVerificationStep(8, state, mail, {
         filterAfterTimestamp: stepStartedAt,
         getRemainingTimeMs: getStep8RemainingTimeResolver(),
@@ -114,22 +110,6 @@
         resendIntervalMs: (mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
           ? 0
           : STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS,
-        beforeSubmit: shouldRefreshOAuthBeforeSubmit ? async (result) => {
-          if (step7ReplayCompleted) {
-            return;
-          }
-
-          step7ReplayCompleted = true;
-          await addLog(`步骤 8：已拿到登录验证码 ${result.code}，先刷新 CPA OAuth 链接并重走步骤 7，再回填验证码。`, 'warn');
-          await rerunStep7ForStep8Recovery({
-            logMessage: '步骤 8：正在重新获取最新 CPA OAuth 链接，并快速重走步骤 7...',
-            postStepDelayMs: 1200,
-          });
-          await ensureStep8VerificationPageReady({
-            timeoutMs: await getStep8ReadyTimeoutMs('重放步骤 7 后重新确认登录验证码页'),
-          });
-          await addLog('步骤 8：登录验证码页面已重新就绪，开始回填刚才获取到的验证码。', 'info');
-        } : undefined,
       });
     }
 

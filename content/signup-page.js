@@ -1355,6 +1355,9 @@ async function waitForSignupVerificationTransition(timeout = 5000) {
 
 async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
   const { password } = payload;
+  const prepareSource = String(payload?.prepareSource || '').trim() || 'step4_execute';
+  const prepareLogLabel = String(payload?.prepareLogLabel || '').trim()
+    || (prepareSource === 'step3_finalize' ? '步骤 3 收尾' : '步骤 4 执行');
   const start = Date.now();
   let recoveryRound = 0;
   const maxRecoveryRounds = 3;
@@ -1363,17 +1366,17 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
     throwIfStopped();
 
     const roundNo = recoveryRound + 1;
-    log(`步骤 4：等待页面进入验证码阶段（第 ${roundNo}/${maxRecoveryRounds} 轮，先等待 5 秒）...`, 'info');
+    log(`${prepareLogLabel}：等待页面进入验证码阶段（第 ${roundNo}/${maxRecoveryRounds} 轮，先等待 5 秒）...`, 'info');
     const snapshot = await waitForSignupVerificationTransition(5000);
 
     if (snapshot.state === 'step5') {
-      log('步骤 4：页面已进入验证码后的下一阶段，本步骤按已完成处理。', 'ok');
-      return { ready: true, alreadyVerified: true, retried: recoveryRound };
+      log(`${prepareLogLabel}：页面已进入验证码后的下一阶段，本步骤按已完成处理。`, 'ok');
+      return { ready: true, alreadyVerified: true, retried: recoveryRound, prepareSource };
     }
 
     if (snapshot.state === 'verification') {
-      log(`步骤 4：验证码页面已就绪${recoveryRound ? `（期间自动恢复 ${recoveryRound} 次）` : ''}。`, 'ok');
-      return { ready: true, retried: recoveryRound };
+      log(`${prepareLogLabel}：验证码页面已就绪${recoveryRound ? `（期间自动恢复 ${recoveryRound} 次）` : ''}。`, 'ok');
+      return { ready: true, retried: recoveryRound, prepareSource };
     }
 
     if (snapshot.state === 'email_exists') {
@@ -1385,7 +1388,7 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
     if (snapshot.state === 'error') {
       await recoverCurrentAuthRetryPage({
         flow: 'signup_password',
-        logLabel: `步骤 4：检测到密码页超时报错，正在点击“重试”恢复（第 ${recoveryRound}/${maxRecoveryRounds} 次）`,
+        logLabel: `${prepareLogLabel}：检测到密码页超时报错，正在点击“重试”恢复（第 ${recoveryRound}/${maxRecoveryRounds} 次）`,
         step: 4,
         timeoutMs: 12000,
       });
@@ -1398,24 +1401,24 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
       }
 
       if ((snapshot.passwordInput.value || '') !== password) {
-        log('步骤 4：页面仍停留在密码页，正在重新填写密码...', 'warn');
+        log(`${prepareLogLabel}：页面仍停留在密码页，正在重新填写密码...`, 'warn');
         await humanPause(450, 1100);
         fillInput(snapshot.passwordInput, password);
       }
 
       if (snapshot.submitButton && isActionEnabled(snapshot.submitButton)) {
-        log(`步骤 4：页面仍停留在密码页，正在重新点击“继续”（第 ${recoveryRound}/${maxRecoveryRounds} 次）...`, 'warn');
+        log(`${prepareLogLabel}：页面仍停留在密码页，正在重新点击“继续”（第 ${recoveryRound}/${maxRecoveryRounds} 次）...`, 'warn');
         await humanPause(350, 900);
         simulateClick(snapshot.submitButton);
         await sleep(1200);
         continue;
       }
 
-      log(`步骤 4：页面仍停留在密码页，但“继续”按钮暂不可用，准备继续等待（${recoveryRound}/${maxRecoveryRounds}）...`, 'warn');
+      log(`${prepareLogLabel}：页面仍停留在密码页，但“继续”按钮暂不可用，准备继续等待（${recoveryRound}/${maxRecoveryRounds}）...`, 'warn');
       continue;
     }
 
-    log(`步骤 4：页面仍在切换中，准备继续等待（${recoveryRound}/${maxRecoveryRounds}）...`, 'warn');
+    log(`${prepareLogLabel}：页面仍在切换中，准备继续等待（${recoveryRound}/${maxRecoveryRounds}）...`, 'warn');
   }
 
   throw new Error(`等待注册验证码页面就绪超时或自动恢复失败（已尝试 ${recoveryRound}/${maxRecoveryRounds} 轮）。URL: ${location.href}`);
