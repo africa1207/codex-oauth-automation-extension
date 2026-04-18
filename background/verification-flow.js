@@ -564,7 +564,7 @@
           getLegacyVerificationResendCountDefault(step, { requestFreshCodeFirst })
         )
         : getConfiguredVerificationResendCount(step, state, { requestFreshCodeFirst });
-      const maxSubmitAttempts = 3;
+      const maxSubmitAttempts = 7;
       const resendIntervalMs = Math.max(0, Number(options.resendIntervalMs) || 0);
       let lastResendAt = Number(options.lastResendAt) || 0;
 
