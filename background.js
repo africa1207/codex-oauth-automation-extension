@@ -5332,7 +5332,7 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
       if (!currentState.emailPrefix) {
         throw new Error('Gmail 原邮箱未设置，请先在侧边栏填写。');
       }
-      await addLog(`=== 鐩爣 ${targetRun}/${totalRuns} 杞細Gmail +tag 妯″紡宸插惎鐢紝灏嗗湪姝ラ 3 鑷姩鐢熸垚閭锛堢 ${attemptRuns} 娆″皾璇曪級===`, 'info');
+      await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮：Gmail +tag 模式已启用，将在步骤 3 自动生成邮箱（第 ${attemptRuns} 次尝试）===`, 'info');
       return null;
     }
     if (!currentState.emailPrefix) {
