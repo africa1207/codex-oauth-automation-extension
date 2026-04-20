@@ -53,6 +53,10 @@ async function persistSeenCodes() {
 }
 
 function buildSeenCodeSessionKey(step, payload = {}) {
+  const explicitSessionKey = String(payload?.sessionKey || '').trim();
+  if (explicitSessionKey) {
+    return explicitSessionKey;
+  }
   const timestamp = Number(payload?.filterAfterTimestamp);
   if (Number.isFinite(timestamp) && timestamp > 0) {
     return `${step}:${timestamp}`;
@@ -95,8 +99,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'DELETE_ALL_EMAILS') {
-    Promise.resolve(deleteAllMailboxEmails(message.step)).catch(() => {});
-    sendResponse({ ok: true });
+    Promise.resolve(deleteAllMailboxEmails(message.step)).then((deleted) => {
+      sendResponse({ ok: true, deleted });
+    }).catch((err) => {
+      sendResponse({ ok: false, error: err?.message || String(err || '删除邮件失败') });
+    });
     return true;
   }
 
@@ -474,6 +481,10 @@ async function openMailAndDeleteAfterRead(item, step) {
 async function deleteAllMailboxEmails(step) {
   try {
     await returnToInbox();
+    const initialItems = findMailItems();
+    if (initialItems.length === 0) {
+      return true;
+    }
 
     const selectAllControl = findSelectAllControl();
     if (!selectAllControl) {
@@ -491,8 +502,15 @@ async function deleteAllMailboxEmails(step) {
     }
 
     simulateClick(deleteButton);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await sleep(250);
+      if (findMailItems().length === 0) {
+        return true;
+      }
+    }
+
     await sleepRandom(200, 500);
-    return true;
+    return findMailItems().length === 0;
   } catch (err) {
     console.warn(MAIL2925_PREFIX, `Step ${step}: delete-all cleanup failed:`, err?.message || err);
     return false;
@@ -551,11 +569,7 @@ async function handlePollEmail(step, payload) {
     throw new Error('2925 邮箱列表未加载完成，请确认当前已打开收件箱。');
   }
 
-  const knownMailIds = getCurrentMailIds(initialItems);
   log(`步骤 ${step}：邮件列表已加载，共 ${initialItems.length} 封邮件`);
-  log(`步骤 ${step}：已记录当前 ${knownMailIds.size} 封旧邮件快照`);
-
-  const FALLBACK_AFTER = 3;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     log(`步骤 ${step}：正在轮询 2925 邮箱，第 ${attempt}/${maxAttempts} 次`);
@@ -568,25 +582,9 @@ async function handlePollEmail(step, payload) {
 
     const items = findMailItems();
     if (items.length > 0) {
-      const useFallback = attempt > FALLBACK_AFTER;
-      const newMailIds = new Set();
-
-      items.forEach((item, index) => {
-        const itemId = getMailItemId(item, index);
-        if (!knownMailIds.has(itemId)) {
-          newMailIds.add(itemId);
-        }
-      });
-
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index];
-        const itemId = getMailItemId(item, index);
-        const isNewMail = newMailIds.has(itemId);
         const itemTimestamp = parseMailItemTimestamp(item);
-
-        if (!useFallback && !isNewMail) {
-          continue;
-        }
 
         const previewText = getMailItemText(item);
         if (!matchesMailFilters(previewText, senderFilters, subjectFilters)) {
@@ -613,21 +611,11 @@ async function handlePollEmail(step, payload) {
 
         seenCodes.add(candidateCode);
         persistSeenCodes();
-        const source = useFallback && !isNewMail
-          ? (bodyCode ? '回退匹配邮件正文' : '回退匹配邮件')
-          : (bodyCode ? '新邮件正文' : '新邮件');
+        const source = bodyCode ? '邮件正文' : '邮件预览';
         const timeLabel = itemTimestamp ? `，时间：${new Date(itemTimestamp).toLocaleString('zh-CN', { hour12: false })}` : '';
         log(`步骤 ${step}：已找到验证码：${candidateCode}（来源：${source}${timeLabel}）`, 'ok');
         return { ok: true, code: candidateCode, emailTimestamp: Date.now() };
       }
-
-      items.forEach((item, index) => {
-        knownMailIds.add(getMailItemId(item, index));
-      });
-    }
-
-    if (attempt === FALLBACK_AFTER + 1) {
-      log(`步骤 ${step}：连续 ${FALLBACK_AFTER} 次未发现新邮件，开始回退到首封匹配邮件`, 'warn');
     }
 
     if (attempt < maxAttempts) {

@@ -138,5 +138,57 @@ return {
   assert.deepStrictEqual(api.run(), {
     state: 'error',
     retryButton: { textContent: 'Try again' },
+    userAlreadyExistsBlocked: false,
+  });
+});
+
+test('signup verification state treats email-verification retry page as error instead of verification', () => {
+  const api = new Function(`
+const location = {
+  pathname: '/email-verification',
+};
+
+function getAuthTimeoutErrorPageState(options) {
+  return options.pathPatterns.some((pattern) => pattern.test(location.pathname))
+    ? { retryButton: { textContent: 'Try again' } }
+    : null;
+}
+
+function isStep5Ready() {
+  return false;
+}
+
+function isVerificationPageStillVisible() {
+  return true;
+}
+
+function isSignupEmailAlreadyExistsPage() {
+  return false;
+}
+
+function getSignupPasswordInput() {
+  return null;
+}
+
+function getSignupPasswordSubmitButton() {
+  return null;
+}
+
+${extractFunction('getSignupAuthRetryPathPatterns')}
+${extractFunction('getSignupPasswordTimeoutErrorPageState')}
+${extractFunction('isSignupPasswordErrorPage')}
+${extractFunction('inspectSignupVerificationState')}
+
+return {
+  run() {
+    return inspectSignupVerificationState();
+  },
+};
+`)();
+
+  assert.deepStrictEqual(api.run(), {
+    state: 'error',
+    retryButton: { textContent: 'Try again' },
+    userAlreadyExistsBlocked: false,
   });
 });

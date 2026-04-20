@@ -58,6 +58,8 @@ const helperBundle = [
   extractFunction(helperSource, 'cleanupStep8NavigationListeners'),
   extractFunction(helperSource, 'rejectPendingStep8'),
   extractFunction(helperSource, 'throwIfStep8SettledOrStopped'),
+  extractFunction(helperSource, 'getRunningSteps'),
+  extractFunction(helperSource, 'inferStoppedRecordStep'),
   extractFunction(helperSource, 'requestStop'),
 ].join('\n');
 
@@ -75,6 +77,9 @@ let autoRunTotalRuns = 3;
 let autoRunAttemptRun = 4;
 let autoRunSessionId = 99;
 const AUTO_RUN_TIMER_KIND_SCHEDULED_START = 'scheduled_start';
+const DEFAULT_STATE = {
+  stepStatuses: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((step) => [step, 'pending'])),
+};
 const STEP8_CLICK_RETRY_DELAY_MS = 500;
 const STEP8_MAX_ROUNDS = 5;
 const STEP8_READY_WAIT_TIMEOUT_MS = 30000;
@@ -137,6 +142,7 @@ async function addLog() {}
 async function broadcastStopToContentScripts() {}
 async function markRunningStepsStopped() {}
 async function broadcastAutoRunStatus() {}
+async function appendAndBroadcastAccountRunRecord() {}
 async function getState() {
   return { autoRunning: false };
 }

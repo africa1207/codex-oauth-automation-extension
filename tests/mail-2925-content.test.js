@@ -60,13 +60,22 @@ let refreshCalls = 0;
 const clickOrder = [];
 const readAndDeleteCalls = [];
 const seenCodes = new Set();
+const deletedMailIds = new Set();
 const baselineMail = { id: 'baseline', text: 'OpenAI newsletter without code' };
 const newMail = { id: 'new', text: 'OpenAI verification code 654321' };
 
 function findMailItems() {
-  if (state === 'detail') return [];
-  if (state === 'baseline') return [baselineMail];
-  return [baselineMail, newMail];
+  const items = [];
+  if (state === 'detail') return items;
+  if (state === 'baseline' || state === 'with-new') {
+    if (!deletedMailIds.has('baseline')) {
+      items.push(baselineMail);
+    }
+  }
+  if (state === 'with-new' && !deletedMailIds.has('new')) {
+    items.push(newMail);
+  }
+  return items;
 }
 
 function getMailItemId(item) {
@@ -99,7 +108,9 @@ async function sleepRandom() {}
 
 async function returnToInbox() {
   clickOrder.push('inbox');
-  state = 'baseline';
+  if (state === 'detail') {
+    state = 'baseline';
+  }
   return true;
 }
 
@@ -113,6 +124,7 @@ async function refreshInbox() {
 
 async function openMailAndDeleteAfterRead(item) {
   readAndDeleteCalls.push(item.id);
+  deletedMailIds.add(item.id);
   return item.id === 'new' ? 'Your ChatGPT code is 654321' : 'No code here';
 }
 
@@ -142,7 +154,7 @@ return {
 
   assert.equal(result.code, '654321');
   assert.deepEqual(api.getClickOrder(), ['inbox', 'refresh', 'inbox', 'refresh']);
-  assert.deepEqual(api.getReadAndDeleteCalls(), ['new']);
+  assert.deepEqual(api.getReadAndDeleteCalls(), ['baseline', 'new']);
 });
 
 test('handlePollEmail ignores targetEmail and still tests any matching ChatGPT mail', async () => {
@@ -419,10 +431,15 @@ test('deleteAllMailboxEmails selects all messages and clicks delete', async () =
 const calls = [];
 const selectAllControl = { kind: 'select-all' };
 const deleteButton = { kind: 'delete' };
+let mailboxCleared = false;
 
 async function returnToInbox() {
   calls.push('inbox');
   return true;
+}
+
+function findMailItems() {
+  return mailboxCleared ? [] : [{ id: 'mail-1' }];
 }
 
 function findSelectAllControl() {
@@ -444,11 +461,13 @@ function simulateClick(node) {
   }
   if (node === deleteButton) {
     calls.push('delete');
+    mailboxCleared = true;
     return;
   }
   throw new Error('unexpected node');
 }
 
+async function sleep() {}
 async function sleepRandom() {}
 
 const console = { warn() {} };

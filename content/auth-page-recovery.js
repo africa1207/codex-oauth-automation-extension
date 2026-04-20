@@ -15,6 +15,7 @@
       isActionEnabled,
       isVisibleElement,
       log,
+      routeErrorPattern = null,
       simulateClick,
       sleep,
       throwIfStopped,
@@ -65,9 +66,13 @@
       const detailMatched = detailPattern instanceof RegExp
         ? detailPattern.test(text)
         : false;
+      const routeErrorMatched = routeErrorPattern instanceof RegExp
+        ? routeErrorPattern.test(text)
+        : false;
       const maxCheckAttemptsBlocked = /max_check_attempts/i.test(text);
+      const userAlreadyExistsBlocked = /user_already_exists/i.test(text);
 
-      if (!titleMatched && !detailMatched && !maxCheckAttemptsBlocked) {
+      if (!titleMatched && !detailMatched && !routeErrorMatched && !maxCheckAttemptsBlocked && !userAlreadyExistsBlocked) {
         return null;
       }
 
@@ -78,7 +83,9 @@
         retryEnabled: isActionEnabled(retryButton),
         titleMatched,
         detailMatched,
+        routeErrorMatched,
         maxCheckAttemptsBlocked,
+        userAlreadyExistsBlocked,
       };
     }
 
@@ -148,6 +155,12 @@
           );
         }
 
+        if (retryState.userAlreadyExistsBlocked) {
+          throw new Error(
+            'SIGNUP_USER_ALREADY_EXISTS::步骤 4：检测到 user_already_exists，说明当前用户已存在，当前轮将直接停止。'
+          );
+        }
+
         if (retryState.retryButton && retryState.retryEnabled) {
           idlePollCount = 0;
           clickCount += 1;
@@ -196,6 +209,12 @@
       if (finalRetryState.maxCheckAttemptsBlocked) {
         throw new Error(
           'CF_SECURITY_BLOCKED::您已触发Cloudflare 安全防护系统，已完全停止流程，请不要短时间内多次进行重新发送验证码，连续刷新、反复点击重试会加重风控；请先关闭页面等待 15-30 分钟，让系统的临时限制自动解除。或者更换浏览器'
+        );
+      }
+
+      if (finalRetryState.userAlreadyExistsBlocked) {
+        throw new Error(
+          'SIGNUP_USER_ALREADY_EXISTS::步骤 4：检测到 user_already_exists，说明当前用户已存在，当前轮将直接停止。'
         );
       }
 

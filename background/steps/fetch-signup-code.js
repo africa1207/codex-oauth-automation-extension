@@ -25,6 +25,7 @@
       const mail = getMailConfig(state);
       if (mail.error) throw new Error(mail.error);
       const stepStartedAt = Date.now();
+      const verificationSessionKey = `4:${stepStartedAt}`;
       const signupTabId = await getTabId('signup-page');
       if (!signupTabId) {
         throw new Error('认证页面标签页已关闭，无法继续步骤 4。');
@@ -91,7 +92,9 @@
       }
 
       await resolveVerificationStep(4, state, mail, {
-        filterAfterTimestamp: stepStartedAt,
+        filterAfterTimestamp: mail.provider === '2925' ? 0 : stepStartedAt,
+        sessionKey: verificationSessionKey,
+        disableTimeBudgetCap: mail.provider === '2925',
         requestFreshCodeFirst: mail.provider === HOTMAIL_PROVIDER ? false : true,
         resendIntervalMs: (mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
           ? 0
