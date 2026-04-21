@@ -5394,6 +5394,7 @@ const mail2925SessionManager = self.MultiPageBackgroundMail2925Session?.createMa
   normalizeMail2925Accounts,
   pickMail2925AccountForRun,
   requestStop,
+  ensureContentScriptReadyOnTab,
   reuseOrCreateTab,
   sendToContentScriptResilient,
   sendToMailContentScriptResilient,
@@ -5402,6 +5403,7 @@ const mail2925SessionManager = self.MultiPageBackgroundMail2925Session?.createMa
   sleepWithStop,
   throwIfStopped,
   upsertMail2925AccountInList,
+  waitForTabUrlMatch,
 });
 
 async function upsertMail2925Account(input = {}) {

@@ -629,6 +629,13 @@ function extractVerificationCode(text, strictChatGPTCodeOnly = false) {
   return null;
 }
 
+function normalizeMinuteTimestamp(timestamp) {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return 0;
+  const date = new Date(timestamp);
+  date.setSeconds(0, 0);
+  return date.getTime();
+}
+
 function parseMailItemTimestamp(item) {
   const timeText = getMailItemTimeText(item);
   if (!timeText) return null;
@@ -920,10 +927,12 @@ async function handlePollEmail(step, payload) {
     subjectFilters,
     maxAttempts,
     intervalMs,
+    filterAfterTimestamp = 0,
     excludeCodes = [],
     strictChatGPTCodeOnly = false,
   } = payload || {};
   const excludedCodeSet = new Set(excludeCodes.filter(Boolean));
+  const filterAfterMinute = normalizeMinuteTimestamp(Number(filterAfterTimestamp) || 0);
   if (typeof throwIfMail2925LimitReached === 'function') {
     throwIfMail2925LimitReached();
   }
@@ -975,6 +984,11 @@ async function handlePollEmail(step, payload) {
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index];
         const itemTimestamp = parseMailItemTimestamp(item);
+        const itemMinute = normalizeMinuteTimestamp(itemTimestamp || 0);
+
+        if (filterAfterMinute && (!itemMinute || itemMinute < filterAfterMinute)) {
+          continue;
+        }
 
         const previewText = getMailItemText(item);
         if (!matchesMailFilters(previewText, senderFilters, subjectFilters)) {

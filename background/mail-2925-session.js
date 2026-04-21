@@ -15,6 +15,7 @@
       pickMail2925AccountForRun,
       getState,
       isAutoRunLockedState,
+      ensureContentScriptReadyOnTab,
       requestStop,
       reuseOrCreateTab,
       sendToContentScriptResilient,
@@ -24,11 +25,12 @@
       sleepWithStop,
       throwIfStopped,
       upsertMail2925AccountInList,
+      waitForTabUrlMatch,
     } = deps;
 
     const MAIL2925_SOURCE = 'mail-2925';
     const MAIL2925_URL = 'https://2925.com/#/mailList';
-    const MAIL2925_LOGIN_URL = 'https://2925.com/';
+    const MAIL2925_LOGIN_URL = 'https://2925.com/login/';
     const MAIL2925_INJECT = ['content/utils.js', 'content/mail-2925.js'];
     const MAIL2925_INJECT_SOURCE = 'mail-2925';
     const MAIL2925_COOKIE_DOMAINS = [
@@ -387,7 +389,8 @@
       }
 
       throwIfStopped();
-      await reuseOrCreateTab(MAIL2925_SOURCE, forceRelogin ? MAIL2925_LOGIN_URL : MAIL2925_URL, {
+      const targetUrl = forceRelogin ? MAIL2925_LOGIN_URL : MAIL2925_URL;
+      const tabId = await reuseOrCreateTab(MAIL2925_SOURCE, targetUrl, {
         inject: MAIL2925_INJECT,
         injectSource: MAIL2925_INJECT_SOURCE,
       });
@@ -497,12 +500,39 @@
 
       throwIfStopped();
       await addLog(`2925：准备打开登录页 ${MAIL2925_LOGIN_URL}（forceRelogin=${forceRelogin ? 'true' : 'false'}）`, 'info');
-      await reuseOrCreateTab(MAIL2925_SOURCE, forceRelogin ? MAIL2925_LOGIN_URL : MAIL2925_URL, {
+      const targetUrl = forceRelogin ? MAIL2925_LOGIN_URL : MAIL2925_URL;
+      const tabId = await reuseOrCreateTab(MAIL2925_SOURCE, targetUrl, {
         inject: MAIL2925_INJECT,
         injectSource: MAIL2925_INJECT_SOURCE,
       });
       const openedUrl = await getMail2925CurrentTabUrl();
       await addLog(`2925：打开页后当前标签地址：${openedUrl || 'unknown'}`, 'info');
+
+      if (forceRelogin && typeof waitForTabUrlMatch === 'function') {
+        const matchedLoginTab = await waitForTabUrlMatch(
+          tabId,
+          (url) => {
+            try {
+              const parsed = new URL(String(url || ''));
+              return (parsed.hostname === '2925.com' || parsed.hostname === 'www.2925.com')
+                && /^\/login\/?$/.test(parsed.pathname);
+            } catch {
+              return false;
+            }
+          },
+          { timeoutMs: 15000, retryDelayMs: 300 }
+        );
+        await addLog(`2925：等待最终落到登录页结果：${matchedLoginTab?.url || 'timeout'}`, matchedLoginTab ? 'info' : 'warn');
+        if (matchedLoginTab && typeof ensureContentScriptReadyOnTab === 'function') {
+          await ensureContentScriptReadyOnTab(MAIL2925_SOURCE, tabId, {
+            inject: MAIL2925_INJECT,
+            injectSource: MAIL2925_INJECT_SOURCE,
+            timeoutMs: 20000,
+            retryDelayMs: 800,
+            logMessage: '步骤 0：2925 登录页内容脚本未就绪，正在等待页面稳定后继续登录...',
+          });
+        }
+      }
 
       if (forceRelogin && typeof sleepWithStop === 'function') {
         await addLog('2925：登录页已打开，等待 3 秒后开始检查输入框并执行登录...', 'info');

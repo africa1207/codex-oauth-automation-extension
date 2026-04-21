@@ -1,6 +1,8 @@
 (function attachBackgroundStep4(root, factory) {
   root.MultiPageBackgroundStep4 = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundStep4Module() {
+  const MAIL_2925_FILTER_LOOKBACK_MS = 10 * 60 * 1000;
+
   function createStep4Executor(deps = {}) {
     const {
       addLog,
@@ -26,6 +28,9 @@
       const mail = getMailConfig(state);
       if (mail.error) throw new Error(mail.error);
       const stepStartedAt = Date.now();
+      const verificationFilterAfterTimestamp = mail.provider === '2925'
+        ? Math.max(0, stepStartedAt - MAIL_2925_FILTER_LOOKBACK_MS)
+        : stepStartedAt;
       const verificationSessionKey = `4:${stepStartedAt}`;
       const signupTabId = await getTabId('signup-page');
       if (!signupTabId) {
@@ -101,7 +106,7 @@
       }
 
       await resolveVerificationStep(4, state, mail, {
-        filterAfterTimestamp: mail.provider === '2925' ? 0 : stepStartedAt,
+        filterAfterTimestamp: verificationFilterAfterTimestamp,
         sessionKey: verificationSessionKey,
         disableTimeBudgetCap: mail.provider === '2925',
         requestFreshCodeFirst: mail.provider === HOTMAIL_PROVIDER ? false : true,

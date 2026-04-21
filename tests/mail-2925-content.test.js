@@ -56,7 +56,10 @@ function extractFunction(name) {
 }
 
 test('handlePollEmail establishes a baseline after opening from detail view and only picks mail from a later refresh', async () => {
-  const bundle = extractFunction('handlePollEmail');
+  const bundle = [
+    extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('handlePollEmail'),
+  ].join('\n');
 
   const api = new Function(`
 let state = 'detail';
@@ -162,7 +165,10 @@ return {
 });
 
 test('handlePollEmail ignores targetEmail and still tests any matching ChatGPT mail', async () => {
-  const bundle = extractFunction('handlePollEmail');
+  const bundle = [
+    extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('handlePollEmail'),
+  ].join('\n');
 
   const api = new Function(`
 let state = 'empty';
@@ -240,6 +246,94 @@ return {
 
   assert.equal(result.code, '112233');
   assert.deepEqual(api.getReadAndDeleteCalls(), ['mail-1']);
+});
+
+test('handlePollEmail only accepts 2925 mails inside the fixed lookback window', async () => {
+  const bundle = [
+    extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('handlePollEmail'),
+  ].join('\n');
+
+  const api = new Function(`
+let state = 'ready';
+const seenCodes = new Set();
+const readAndDeleteCalls = [];
+const oldMail = {
+  id: 'mail-old',
+  text: 'OpenAI verification code 111111',
+  timestamp: 1000,
+};
+const windowMail = {
+  id: 'mail-window',
+  text: 'OpenAI verification code 222222',
+  timestamp: 301000,
+};
+
+function findMailItems() {
+  return state === 'ready' ? [oldMail, windowMail] : [];
+}
+
+function getMailItemId(item) {
+  return item.id;
+}
+
+function getCurrentMailIds(items = []) {
+  return new Set(items.map((item) => item.id));
+}
+
+function parseMailItemTimestamp(item) {
+  return item.timestamp;
+}
+
+function matchesMailFilters(text) {
+  return /openai|verification/i.test(String(text || ''));
+}
+
+function getMailItemText(item) {
+  return item.text;
+}
+
+function extractVerificationCode(text) {
+  const match = String(text || '').match(/(\\d{6})/);
+  return match ? match[1] : null;
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+async function returnToInbox() {
+  return true;
+}
+async function refreshInbox() {}
+
+async function openMailAndDeleteAfterRead(item) {
+  readAndDeleteCalls.push(item.id);
+  return item.text;
+}
+
+async function ensureSeenCodesSession() {}
+function persistSeenCodes() {}
+function log() {}
+
+${bundle}
+
+return {
+  handlePollEmail,
+  getReadAndDeleteCalls() {
+    return readAndDeleteCalls.slice();
+  },
+};
+`)();
+
+  const result = await api.handlePollEmail(4, {
+    senderFilters: ['openai'],
+    subjectFilters: ['verification'],
+    maxAttempts: 1,
+    intervalMs: 1,
+    filterAfterTimestamp: 120000,
+  });
+
+  assert.equal(result.code, '222222');
+  assert.deepEqual(api.getReadAndDeleteCalls(), ['mail-window']);
 });
 
 test('ensureSeenCodesSession resets tried codes only when a new verification step session starts', async () => {

@@ -6,7 +6,7 @@ const source = fs.readFileSync('background/verification-flow.js', 'utf8');
 const globalScope = {};
 const api = new Function('self', `${source}; return self.MultiPageBackgroundVerificationFlow;`)(globalScope);
 
-test('verification flow extends 2925 polling window', () => {
+test('verification flow keeps 2925 polling cadence in the default payload', () => {
   const helpers = api.createVerificationFlowHelpers({
     addLog: async () => {},
     chrome: { tabs: { update: async () => {} } },
@@ -37,10 +37,8 @@ test('verification flow extends 2925 polling window', () => {
   const step4Payload = helpers.getVerificationPollPayload(4, { email: 'user@example.com', mailProvider: '2925' });
   const step8Payload = helpers.getVerificationPollPayload(8, { email: 'user@example.com', mailProvider: '2925' });
 
-  assert.equal(step4Payload.filterAfterTimestamp, 0);
   assert.equal(step4Payload.maxAttempts, 15);
   assert.equal(step4Payload.intervalMs, 15000);
-  assert.equal(step8Payload.filterAfterTimestamp, 0);
   assert.equal(step8Payload.maxAttempts, 15);
   assert.equal(step8Payload.intervalMs, 15000);
 });
@@ -111,7 +109,7 @@ test('verification flow runs beforeSubmit hook before filling the code', async (
   ]);
 });
 
-test('verification flow clears 2925 mailbox before polling and after successful login code submission', async () => {
+test('verification flow skips 2925 mailbox preclear when using a fixed login mail window and still clears after success', async () => {
   const mailMessages = [];
 
   const helpers = api.createVerificationFlowHelpers({
@@ -164,15 +162,15 @@ test('verification flow clears 2925 mailbox before polling and after successful 
       lastLoginCode: null,
     },
     { provider: '2925', label: '2925 邮箱' },
-    {}
+    { filterAfterTimestamp: 123456 }
   );
 
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.deepStrictEqual(mailMessages, ['DELETE_ALL_EMAILS', 'POLL_EMAIL', 'DELETE_ALL_EMAILS']);
+  assert.deepStrictEqual(mailMessages, ['POLL_EMAIL', 'DELETE_ALL_EMAILS']);
 });
 
-test('verification flow clears 2925 mailbox before polling and after successful signup code submission', async () => {
+test('verification flow skips 2925 mailbox preclear when using a fixed signup mail window and still clears after success', async () => {
   const mailMessages = [];
 
   const helpers = api.createVerificationFlowHelpers({
@@ -229,13 +227,14 @@ test('verification flow clears 2925 mailbox before polling and after successful 
     },
     { provider: '2925', label: '2925 邮箱' },
     {
+      filterAfterTimestamp: 123456,
       requestFreshCodeFirst: false,
     }
   );
 
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.deepStrictEqual(mailMessages, ['DELETE_ALL_EMAILS', 'POLL_EMAIL', 'DELETE_ALL_EMAILS']);
+  assert.deepStrictEqual(mailMessages, ['POLL_EMAIL', 'DELETE_ALL_EMAILS']);
 });
 
 test('verification flow treats add-phone after login code submit as fatal instead of completing step 8', async () => {

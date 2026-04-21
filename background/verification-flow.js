@@ -239,12 +239,16 @@
       return requestedAt;
     }
 
-    function shouldPreclear2925Mailbox(step, mail) {
-      return mail?.provider === '2925' && (step === 4 || step === 8);
+    function shouldPreclear2925Mailbox(step, mail, options = {}) {
+      if (mail?.provider !== '2925' || (step !== 4 && step !== 8)) {
+        return false;
+      }
+
+      return !(Number(options.filterAfterTimestamp) > 0);
     }
 
     async function clear2925MailboxBeforePolling(step, mail, options = {}) {
-      if (!shouldPreclear2925Mailbox(step, mail)) {
+      if (!shouldPreclear2925Mailbox(step, mail, options)) {
         return;
       }
 

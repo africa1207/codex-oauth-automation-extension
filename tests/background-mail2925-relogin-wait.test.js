@@ -3,6 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const mail2925Utils = require('../mail2925-utils.js');
 
+test('background mail2925 session uses /login/ as relogin entry url', () => {
+  const source = fs.readFileSync('background/mail-2925-session.js', 'utf8');
+  assert.match(source, /const MAIL2925_LOGIN_URL = 'https:\/\/2925\.com\/login\/';/);
+});
+
 test('ensureMail2925MailboxSession waits 3 seconds before and after opening login page on force relogin', async () => {
   const source = fs.readFileSync('background/mail-2925-session.js', 'utf8');
   const globalScope = {};
@@ -17,6 +22,8 @@ test('ensureMail2925MailboxSession waits 3 seconds before and after opening logi
   };
   const events = {
     sleeps: [],
+    openedUrls: [],
+    readyCalls: 0,
   };
 
   const manager = api.createMail2925SessionManager({
@@ -41,7 +48,13 @@ test('ensureMail2925MailboxSession waits 3 seconds before and after opening logi
     normalizeMail2925Accounts: mail2925Utils.normalizeMail2925Accounts,
     pickMail2925AccountForRun: mail2925Utils.pickMail2925AccountForRun,
     requestStop: async () => {},
-    reuseOrCreateTab: async () => 1,
+    ensureContentScriptReadyOnTab: async () => {
+      events.readyCalls += 1;
+    },
+    reuseOrCreateTab: async (_source, url) => {
+      events.openedUrls.push(url);
+      return 1;
+    },
     sendToMailContentScriptResilient: async () => ({ loggedIn: true }),
     setPersistentSettings: async (payload) => {
       currentState = { ...currentState, ...payload };
@@ -54,6 +67,7 @@ test('ensureMail2925MailboxSession waits 3 seconds before and after opening logi
     },
     throwIfStopped: () => {},
     upsertMail2925AccountInList: mail2925Utils.upsertMail2925AccountInList,
+    waitForTabUrlMatch: async () => ({ url: 'https://2925.com/login/' }),
   });
 
   await manager.ensureMail2925MailboxSession({
@@ -62,5 +76,7 @@ test('ensureMail2925MailboxSession waits 3 seconds before and after opening logi
     actionLabel: '步骤 4：确认 2925 邮箱登录态',
   });
 
+  assert.deepStrictEqual(events.openedUrls, ['https://2925.com/login/']);
   assert.deepStrictEqual(events.sleeps, [3000, 3000]);
+  assert.equal(events.readyCalls, 1);
 });

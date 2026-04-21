@@ -1,6 +1,8 @@
 (function attachBackgroundStep8(root, factory) {
   root.MultiPageBackgroundStep8 = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundStep8Module() {
+  const MAIL_2925_FILTER_LOOKBACK_MS = 10 * 60 * 1000;
+
   function createStep8Executor(deps = {}) {
     const {
       addLog,
@@ -61,6 +63,9 @@
       if (mail.error) throw new Error(mail.error);
 
       const stepStartedAt = Date.now();
+      const verificationFilterAfterTimestamp = mail.provider === '2925'
+        ? Math.max(0, stepStartedAt - MAIL_2925_FILTER_LOOKBACK_MS)
+        : stepStartedAt;
       const verificationSessionKey = `8:${stepStartedAt}`;
       const authTabId = await getTabId('signup-page');
 
@@ -140,7 +145,7 @@
         ...state,
         step8VerificationTargetEmail: displayedVerificationEmail || '',
       }, mail, {
-        filterAfterTimestamp: mail.provider === '2925' ? 0 : stepStartedAt,
+        filterAfterTimestamp: verificationFilterAfterTimestamp,
         sessionKey: verificationSessionKey,
         disableTimeBudgetCap: mail.provider === '2925',
         getRemainingTimeMs: getStep8RemainingTimeResolver(state?.oauthUrl || ''),
