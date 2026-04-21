@@ -2132,11 +2132,21 @@ function isGeneratedAliasProvider(stateOrProvider, mail2925Mode = undefined) {
   const provider = typeof stateOrProvider === 'string'
     ? stateOrProvider
     : stateOrProvider?.mailProvider;
+  const resolvedMail2925Mode = mail2925Mode !== undefined
+    ? normalizeMail2925Mode(mail2925Mode)
+    : getMail2925Mode(stateOrProvider);
   const utils = (typeof self !== 'undefined' ? self : globalThis).MultiPageManagedAliasUtils || null;
+  if (utils?.usesManagedAliasGeneration) {
+    return utils.usesManagedAliasGeneration(provider, { mail2925Mode: resolvedMail2925Mode });
+  }
   if (utils?.isManagedAliasProvider) {
+    if (String(provider || '').trim().toLowerCase() === '2925') {
+      return utils.isManagedAliasProvider(provider) && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE;
+    }
     return utils.isManagedAliasProvider(provider);
   }
-  return provider === GMAIL_PROVIDER || provider === '2925';
+  return provider === GMAIL_PROVIDER
+    || (provider === '2925' && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE);
 }
 
 function shouldUseCustomRegistrationEmail(state = {}) {
@@ -2279,11 +2289,21 @@ function isGeneratedAliasProvider(stateOrProvider, mail2925Mode = undefined) {
   const provider = typeof stateOrProvider === 'string'
     ? stateOrProvider
     : stateOrProvider?.mailProvider;
+  const resolvedMail2925Mode = mail2925Mode !== undefined
+    ? normalizeMail2925Mode(mail2925Mode)
+    : getMail2925Mode(stateOrProvider);
   const utils = getManagedAliasUtils();
+  if (utils?.usesManagedAliasGeneration) {
+    return utils.usesManagedAliasGeneration(provider, { mail2925Mode: resolvedMail2925Mode });
+  }
   if (utils?.isManagedAliasProvider) {
+    if (String(provider || '').trim().toLowerCase() === '2925') {
+      return utils.isManagedAliasProvider(provider) && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE;
+    }
     return utils.isManagedAliasProvider(provider);
   }
-  return provider === GMAIL_PROVIDER || provider === '2925';
+  return provider === GMAIL_PROVIDER
+    || (provider === '2925' && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE);
 }
 
 function shouldUseCustomRegistrationEmail(state = {}) {

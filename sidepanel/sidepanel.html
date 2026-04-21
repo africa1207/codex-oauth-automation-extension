@@ -269,20 +269,25 @@
           <button id="btn-cf-domain-mode" class="btn btn-outline btn-sm data-inline-btn" type="button">添加</button>
         </div>
       </div>
-      <div class="data-row" id="row-email-prefix" style="display:none;">
-        <span class="data-label" id="label-email-prefix">别名基邮箱</span>
+      <div class="data-row" id="row-mail2925-pool-settings" style="display:none;">
+        <span class="data-label">2925 号池</span>
         <div class="data-inline mail2925-base-inline">
-          <input type="text" id="input-email-prefix" class="data-input mail2925-base-input" placeholder="例如 yourname@example.com" />
-          <select id="select-mail2925-pool-account" class="data-select mail2925-pool-select" style="display:none;">
-            <option value="">请选择号池邮箱</option>
-          </select>
-          <label class="toggle-switch mail2925-pool-toggle" id="label-mail2925-use-account-pool" for="input-mail2925-use-account-pool" style="display:none;" title="开启后只能从号池中选择 2925 基邮箱">
+          <label class="toggle-switch mail2925-pool-toggle" id="label-mail2925-use-account-pool" for="input-mail2925-use-account-pool" style="display:none;" title="开启后启用 2925 账号池">
             <input type="checkbox" id="input-mail2925-use-account-pool" />
             <span class="toggle-switch-track" aria-hidden="true">
               <span class="toggle-switch-thumb"></span>
             </span>
             <span>号池</span>
           </label>
+          <select id="select-mail2925-pool-account" class="data-select mail2925-pool-select" style="display:none;">
+            <option value="">请选择号池邮箱</option>
+          </select>
+        </div>
+      </div>
+      <div class="data-row" id="row-email-prefix" style="display:none;">
+        <span class="data-label" id="label-email-prefix">别名基邮箱</span>
+        <div class="data-inline">
+          <input type="text" id="input-email-prefix" class="data-input mail2925-base-input" placeholder="例如 yourname@example.com" />
         </div>
       </div>
       <div class="data-row" id="row-inbucket-host" style="display:none;">
