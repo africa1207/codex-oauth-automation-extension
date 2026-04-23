@@ -139,6 +139,7 @@ test('sidepanel html contains account records overlay and manager script', () =>
   assert.match(html, /id="account-records-stats"/);
   assert.match(html, /id="btn-clear-account-records"/);
   assert.match(html, /id="btn-toggle-account-records-selection"/);
+  assert.match(html, /id="btn-download-account-records"/);
   assert.match(html, /id="btn-delete-selected-account-records"/);
   assert.match(html, /id="input-sub2api-default-proxy"/);
   assert.notEqual(managerIndex, -1);
@@ -216,6 +217,7 @@ test('account records manager supports filter chips and partial multi-select del
   const btnCloseAccountRecords = createNode();
   const btnClearAccountRecords = createNode();
   const btnToggleAccountRecordsSelection = createNode();
+  const btnDownloadAccountRecords = createNode();
   const btnDeleteSelectedAccountRecords = createNode({ hidden: true, disabled: true });
   const btnAccountRecordsPrev = createNode();
   const btnAccountRecordsNext = createNode();
@@ -250,6 +252,7 @@ test('account records manager supports filter chips and partial multi-select del
       btnClearAccountRecords,
       btnCloseAccountRecords,
       btnDeleteSelectedAccountRecords,
+      btnDownloadAccountRecords,
       btnOpenAccountRecords,
       btnToggleAccountRecordsSelection,
     },
@@ -274,6 +277,16 @@ test('account records manager supports filter chips and partial multi-select del
             clearedCount: latestState.accountRunHistory.length,
           };
         }
+        if (message.type === 'EXPORT_ACCOUNT_RUN_HISTORY_RECORDS') {
+          const selected = Array.isArray(message.payload?.recordIds) ? message.payload.recordIds : [];
+          const records = selected.length
+            ? latestState.accountRunHistory.filter((item) => selected.includes(item.recordId))
+            : latestState.accountRunHistory.slice();
+          return {
+            exportedCount: records.length,
+            records,
+          };
+        }
         return {};
       },
     },
@@ -292,6 +305,7 @@ test('account records manager supports filter chips and partial multi-select del
   assert.match(list.innerHTML, /failed@example\.com/);
   assert.equal(pageLabel.textContent, '1 / 1');
   assert.equal(btnDeleteSelectedAccountRecords.hidden, true);
+  assert.equal(btnDownloadAccountRecords.textContent, '下载 JSON');
 
   stats.listeners.click({
     target: createClosestTarget({
@@ -311,6 +325,7 @@ test('account records manager supports filter chips and partial multi-select del
   assert.equal(btnClearAccountRecords.hidden, true);
   assert.equal(btnDeleteSelectedAccountRecords.disabled, true);
   assert.equal(btnToggleAccountRecordsSelection.textContent, '取消多选');
+  assert.equal(btnDownloadAccountRecords.textContent, '批量下载');
 
   list.listeners.click({
     target: createClosestTarget({
@@ -321,6 +336,7 @@ test('account records manager supports filter chips and partial multi-select del
 
   assert.equal(btnDeleteSelectedAccountRecords.disabled, false);
   assert.match(btnDeleteSelectedAccountRecords.textContent, /删除选中\(1\)/);
+  assert.equal(btnDownloadAccountRecords.textContent, '批量下载(1)');
   assert.match(list.innerHTML, /data-account-record-checkbox="failed@example\.com"[^>]*checked/);
 
   await btnDeleteSelectedAccountRecords.listeners.click();
@@ -336,7 +352,7 @@ test('account records manager supports filter chips and partial multi-select del
   assert.match(list.innerHTML, /stopped@example\.com/);
   assert.equal(btnDeleteSelectedAccountRecords.disabled, true);
   assert.deepStrictEqual(toasts.at(-1), {
-    message: '已删除 1 条邮箱记录。',
+    message: '已删除 1 条记录。',
     tone: 'success',
   });
 });

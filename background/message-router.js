@@ -159,6 +159,23 @@
             signupVerificationRequestedAt: null,
           });
           break;
+        case 6: {
+          const updates = {
+            chatgptAccessToken: payload.accessToken || null,
+            chatgptSessionToken: payload.sessionToken || null,
+            chatgptAuthProvider: payload.chatgptAuthProvider || null,
+            chatgptAccount: payload.chatgptAccount || null,
+            chatgptSession: payload.chatgptSession || null,
+            chatgptSessionRaw: payload.chatgptSessionRaw || '',
+            chatgptSessionExpires: payload.chatgptSessionExpires || null,
+            chatgptUser: payload.chatgptUser || null,
+            chatgptUserEmail: payload.chatgptUserEmail || null,
+            chatgptUserName: payload.chatgptUserName || null,
+          };
+          await setState(updates);
+          broadcastDataUpdate(updates);
+          break;
+        }
         case 8:
           await setState({
             lastEmailTimestamp: payload.emailTimestamp || null,
@@ -394,6 +411,26 @@
           const recordIds = Array.isArray(message.payload?.recordIds) ? message.payload.recordIds : [];
           const result = await deleteAccountRunHistoryRecords(recordIds, state);
           return { ok: true, ...result };
+        }
+
+        case 'EXPORT_ACCOUNT_RUN_HISTORY_RECORDS': {
+          const state = await getState();
+          const records = typeof deps.getPersistedAccountRunHistory === 'function'
+            ? await deps.getPersistedAccountRunHistory()
+            : (Array.isArray(state.accountRunHistory) ? state.accountRunHistory : []);
+          const recordIds = Array.isArray(message.payload?.recordIds)
+            ? message.payload.recordIds.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean)
+            : [];
+          const selectedIds = new Set(recordIds);
+          const exportedRecords = selectedIds.size
+            ? records.filter((record) => selectedIds.has(String(record?.recordId || record?.email || '').trim().toLowerCase()))
+            : records.slice();
+
+          return {
+            ok: true,
+            records: exportedRecords,
+            exportedCount: exportedRecords.length,
+          };
         }
 
         case 'EXECUTE_STEP': {

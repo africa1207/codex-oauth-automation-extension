@@ -22,6 +22,7 @@ const btnAccountRecordsNext = document.getElementById('btn-account-records-next'
 const btnCloseAccountRecords = document.getElementById('btn-close-account-records');
 const btnClearAccountRecords = document.getElementById('btn-clear-account-records');
 const btnToggleAccountRecordsSelection = document.getElementById('btn-toggle-account-records-selection');
+const btnDownloadAccountRecords = document.getElementById('btn-download-account-records');
 const btnDeleteSelectedAccountRecords = document.getElementById('btn-delete-selected-account-records');
 const updateSection = document.getElementById('update-section');
 const btnRepoHome = document.getElementById('btn-repo-home');
@@ -43,8 +44,10 @@ const contributionModeSummary = document.getElementById('contribution-mode-summa
 const btnStartContribution = document.getElementById('btn-start-contribution');
 const btnOpenContributionUpload = document.getElementById('btn-open-contribution-upload');
 const btnExitContributionMode = document.getElementById('btn-exit-contribution-mode');
-const displayOauthUrl = document.getElementById('display-oauth-url');
-const displayLocalhostUrl = document.getElementById('display-localhost-url');
+const displayAccessToken = document.getElementById('display-access-token');
+const displaySessionSummary = document.getElementById('display-session-summary');
+const displayOauthUrl = displayAccessToken;
+const displayLocalhostUrl = displaySessionSummary;
 const displayStatus = document.getElementById('display-status');
 const statusBar = document.getElementById('status-bar');
 const inputEmail = document.getElementById('input-email');
@@ -118,6 +121,24 @@ const mail2925Section = document.getElementById('mail2925-section');
 const luckmailSection = document.getElementById('luckmail-section');
 const icloudSection = document.getElementById('icloud-section');
 const icloudSummary = document.getElementById('icloud-summary');
+
+function renderChatgptSessionSummary(state = {}) {
+  const accessToken = String(state?.chatgptAccessToken || '').trim();
+  const email = String(state?.chatgptUserEmail || '').trim();
+  const name = String(state?.chatgptUserName || '').trim();
+  const expires = String(state?.chatgptSessionExpires || '').trim();
+
+  displayAccessToken.textContent = accessToken || '等待中...';
+  displayAccessToken.classList.toggle('has-value', Boolean(accessToken));
+
+  const summaryParts = [];
+  if (email) summaryParts.push(email);
+  if (name) summaryParts.push(name);
+  if (expires) summaryParts.push(`expires: ${expires}`);
+  const summary = summaryParts.join(' | ');
+  displaySessionSummary.textContent = summary || '等待中...';
+  displaySessionSummary.classList.toggle('has-value', Boolean(summary));
+}
 const icloudList = document.getElementById('icloud-list');
 const icloudLoginHelp = document.getElementById('icloud-login-help');
 const icloudLoginHelpTitle = document.getElementById('icloud-login-help-title');
@@ -1947,14 +1968,7 @@ async function restoreState() {
       refreshIcloudAliases({ silent: true }).catch(() => { });
     }
 
-    if (state.oauthUrl) {
-      displayOauthUrl.textContent = state.oauthUrl;
-      displayOauthUrl.classList.add('has-value');
-    }
-    if (state.localhostUrl) {
-      displayLocalhostUrl.textContent = state.localhostUrl;
-      displayLocalhostUrl.classList.add('has-value');
-    }
+    renderChatgptSessionSummary(state);
     if (state.stepStatuses) {
       for (const [step, status] of Object.entries(state.stepStatuses)) {
         updateStepUI(Number(step), status);
@@ -3353,6 +3367,7 @@ const accountRecordsManager = window.SidepanelAccountRecordsManager?.createAccou
     btnAccountRecordsPrev,
     btnClearAccountRecords,
     btnDeleteSelectedAccountRecords,
+    btnDownloadAccountRecords,
     btnCloseAccountRecords,
     btnOpenAccountRecords,
     btnToggleAccountRecordsSelection,
@@ -4489,14 +4504,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         updateButtonStates();
         if (status === 'completed' || status === 'manual_completed' || status === 'skipped') {
           syncPasswordField(state);
-          if (state.oauthUrl) {
-            displayOauthUrl.textContent = state.oauthUrl;
-            displayOauthUrl.classList.add('has-value');
-          }
-          if (state.localhostUrl) {
-            displayLocalhostUrl.textContent = state.localhostUrl;
-            displayLocalhostUrl.classList.add('has-value');
-          }
+          renderChatgptSessionSummary(state);
         }
       }
       ).catch(() => { });
@@ -4506,8 +4514,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case 'AUTO_RUN_RESET': {
       // Full UI reset for next run
       syncLatestState({
-        oauthUrl: null,
-        localhostUrl: null,
+        chatgptAccessToken: null,
+        chatgptSession: null,
+        chatgptSessionRaw: '',
+        chatgptSessionExpires: null,
+        chatgptUser: null,
+        chatgptUserEmail: null,
+        chatgptUserName: null,
         email: null,
         password: null,
         stepStatuses: STEP_DEFAULT_STATUSES,

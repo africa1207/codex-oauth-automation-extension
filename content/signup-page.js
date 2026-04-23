@@ -80,6 +80,8 @@ async function handleCommand(message) {
       return await ensureSignupEntryReady();
     case 'ENSURE_SIGNUP_PASSWORD_PAGE_READY':
       return await ensureSignupPasswordPageReady();
+    case 'GET_CHATGPT_SESSION':
+      return await getChatgptSessionSnapshot();
     case 'STEP8_FIND_AND_CLICK':
       return await step8_findAndClick();
     case 'STEP8_GET_STATE':
@@ -87,6 +89,59 @@ async function handleCommand(message) {
     case 'STEP8_TRIGGER_CONTINUE':
       return await step8_triggerContinue(message.payload);
   }
+}
+
+async function getChatgptSessionSnapshot() {
+  const isChatgptHost = /^(chatgpt\.com|chat\.openai\.com)$/i.test(location.hostname || '');
+  if (!isChatgptHost) {
+    throw new Error(`当前页面不是 ChatGPT 首页，无法采集 session。URL: ${location.href}`);
+  }
+
+  const response = await fetch('/api/auth/session', {
+    method: 'GET',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`auth/session 请求失败：HTTP ${response.status}`);
+  }
+
+  const rawText = await response.text();
+  let session = null;
+  try {
+    session = rawText ? JSON.parse(rawText) : null;
+  } catch (error) {
+    throw new Error(`auth/session 返回了非 JSON 数据：${error?.message || error}`);
+  }
+
+  const accessToken = typeof session?.accessToken === 'string'
+    ? session.accessToken.trim()
+    : '';
+  const sessionToken = typeof session?.sessionToken === 'string'
+    ? session.sessionToken.trim()
+    : '';
+  const user = session?.user && typeof session.user === 'object'
+    ? session.user
+    : null;
+  const authenticated = Boolean(
+    (accessToken && accessToken.length > 0)
+      || (sessionToken && sessionToken.length > 0)
+      || (user && Object.keys(user).length > 0)
+      || session?.expires
+  );
+
+  return {
+    authenticated,
+    accessToken: accessToken || null,
+    sessionToken: sessionToken || null,
+    authProvider: typeof session?.authProvider === 'string' ? session.authProvider.trim() || null : null,
+    account: session?.account && typeof session.account === 'object' ? session.account : null,
+    session,
+    sessionRaw: rawText,
+  };
 }
 
 const VERIFICATION_CODE_INPUT_SELECTOR = [

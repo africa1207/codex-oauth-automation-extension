@@ -13,25 +13,25 @@
 
     const FILTER_CONFIG = {
       all: {
-        label: '总',
+        label: '全部',
         className: '',
         matches: () => true,
         metaLabel: '全部',
       },
       success: {
-        label: '成',
+        label: '成功',
         className: 'is-success',
         matches: (record) => record.finalStatus === 'success',
         metaLabel: '成功',
       },
       failed: {
-        label: '失',
+        label: '失败',
         className: 'is-failed',
         matches: (record) => record.finalStatus === 'failed',
         metaLabel: '失败',
       },
       stopped: {
-        label: '停',
+        label: '停止',
         className: 'is-stopped',
         matches: (record) => record.finalStatus === 'stopped',
         metaLabel: '停止',
@@ -71,6 +71,76 @@
       return String(record.recordId || record.email || '')
         .trim()
         .toLowerCase();
+    }
+
+    function sanitizeFileNamePart(value, fallback = 'record') {
+      const normalized = String(value || '')
+        .trim()
+        .replace(/[<>:"/\\|?*\x00-\x1F]+/g, '_')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      return normalized || fallback;
+    }
+
+    function buildExportFileName(record = {}, index = 0) {
+      const email = sanitizeFileNamePart(record.email || `record_${index + 1}`);
+      const finishedAt = sanitizeFileNamePart(String(record.finishedAt || '').replace(/[:.]/g, '-'), 'time');
+      return `${email}_${finishedAt}.json`;
+    }
+
+    function triggerJsonDownload(filename, data) {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    }
+
+    function buildExportJsonPayload(record = {}) {
+      const registrationResult = record?.registrationResult && typeof record.registrationResult === 'object'
+        ? record.registrationResult
+        : {};
+      const rawText = String(registrationResult.sessionRaw || '').trim();
+      let basePayload = {};
+
+      if (rawText) {
+        try {
+          const parsed = JSON.parse(rawText);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            basePayload = parsed;
+          }
+        } catch {
+          basePayload = {};
+        }
+      }
+
+      if (!Object.keys(basePayload).length) {
+        basePayload = {
+          user: registrationResult.user || null,
+          expires: registrationResult.sessionExpires || null,
+          account: registrationResult.account || null,
+          accessToken: registrationResult.accessToken || null,
+          authProvider: registrationResult.authProvider || null,
+          sessionToken: registrationResult.sessionToken || null,
+        };
+      }
+
+      return {
+        ...basePayload,
+        codexExportMeta: {
+          email: record.email || null,
+          finishedAt: record.finishedAt || null,
+          finalStatus: record.finalStatus || null,
+          retryCount: normalizeRetryCount(record.retryCount),
+          failureLabel: record.failureLabel || null,
+          failedStep: Number.isInteger(record.failedStep) ? record.failedStep : null,
+        },
+      };
     }
 
     function getAccountRunRecords(currentState = state.getLatestState()) {
@@ -150,7 +220,6 @@
       if (record.finalStatus === 'success') {
         return '流程完成';
       }
-
       return String(record.failureLabel || '').trim() || '流程失败';
     }
 
@@ -262,7 +331,7 @@
       }
 
       if (!allRecords.length) {
-        dom.accountRecordsMeta.textContent = '暂无邮箱记录';
+        dom.accountRecordsMeta.textContent = '暂无记录';
         return;
       }
 
@@ -297,19 +366,27 @@
 
     function updateToolbarState(allRecords) {
       const totalRecords = allRecords.length;
+      const selectedCount = selectedRecordIds.size;
+
       setNodeDisabled(dom.btnClearAccountRecords, totalRecords === 0);
+      setNodeDisabled(dom.btnDownloadAccountRecords, selectionMode ? selectedCount === 0 : totalRecords === 0);
       setNodeDisabled(dom.btnToggleAccountRecordsSelection, totalRecords === 0);
       setNodeHidden(dom.btnClearAccountRecords, selectionMode);
       toggleNodeClass(dom.btnToggleAccountRecordsSelection, 'is-active', selectionMode);
       setNodeAttr(dom.btnToggleAccountRecordsSelection, 'aria-pressed', selectionMode ? 'true' : 'false');
       setNodeText(dom.btnToggleAccountRecordsSelection, selectionMode ? '取消多选' : '多选');
 
-      const selectedCount = selectedRecordIds.size;
       setNodeHidden(dom.btnDeleteSelectedAccountRecords, !selectionMode);
       setNodeDisabled(dom.btnDeleteSelectedAccountRecords, selectedCount === 0);
       setNodeText(
         dom.btnDeleteSelectedAccountRecords,
         selectedCount > 0 ? `删除选中(${selectedCount})` : '删除选中'
+      );
+      setNodeText(
+        dom.btnDownloadAccountRecords,
+        selectionMode
+          ? (selectedCount > 0 ? `批量下载(${selectedCount})` : '批量下载')
+          : '下载 JSON'
       );
     }
 
@@ -337,7 +414,7 @@
 
       const message = allRecords.length
         ? `当前筛选“${getFilterConfig(activeFilter).metaLabel}”下暂无记录`
-        : '暂无邮箱记录';
+        : '暂无记录';
       dom.accountRecordsList.innerHTML = `<div class="account-records-empty">${escapeHtml(message)}</div>`;
     }
 
@@ -378,6 +455,15 @@
               </label>
             `
           : '';
+        const downloadMarkup = !selectionMode
+          ? `
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs account-record-item-download"
+                data-account-record-download="${escapeHtml(recordId)}"
+              >下载 JSON</button>
+            `
+          : '';
 
         return `
           <div
@@ -388,7 +474,7 @@
             <div class="account-record-item-top">
               <div class="account-record-item-email-row">
                 ${selectionMarkup}
-                <div class="account-record-item-email mono">${escapeHtml(String(record.email || '').trim() || '(空邮箱)')}</div>
+                <div class="account-record-item-email mono">${escapeHtml(String(record.email || '').trim() || '(empty email)')}</div>
               </div>
               <div class="account-record-item-side">
                 <span class="account-record-item-status">${escapeHtml(statusMeta.label)}</span>
@@ -397,7 +483,10 @@
             </div>
             <div class="account-record-item-bottom">
               <div class="account-record-item-summary">${escapeHtml(summaryText)}</div>
-              <span class="account-record-item-retry mono">重试 ${escapeHtml(String(retryCount))}</span>
+              <div class="account-record-item-actions">
+                <span class="account-record-item-retry mono">重试 ${escapeHtml(String(retryCount))}</span>
+                ${downloadMarkup}
+              </div>
             </div>
           </div>
         `;
@@ -467,16 +556,40 @@
       }
     }
 
+    async function downloadRecords(recordIds = []) {
+      const response = await runtime.sendMessage({
+        type: 'EXPORT_ACCOUNT_RUN_HISTORY_RECORDS',
+        source: 'sidepanel',
+        payload: {
+          recordIds,
+        },
+      });
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+
+      const records = Array.isArray(response?.records) ? response.records : [];
+      if (!records.length) {
+        helpers.showToast?.('没有可下载的记录。', 'warn', 1800);
+        return;
+      }
+
+      records.forEach((record, index) => {
+        triggerJsonDownload(buildExportFileName(record, index), buildExportJsonPayload(record));
+      });
+      helpers.showToast?.(`已下载 ${records.length} 条记录。`, 'success', 2200);
+    }
+
     async function clearRecords() {
       const records = getAccountRunRecords();
       if (!records.length) {
-        helpers.showToast?.('没有可清理的邮箱记录。', 'warn', 1800);
+        helpers.showToast?.('没有可清理的记录。', 'warn', 1800);
         return;
       }
 
       const confirmed = await helpers.openConfirmModal({
-        title: '清理邮箱记录',
-        message: '确认清理当前全部邮箱记录吗？该操作会同时清空面板记录与本地同步快照。',
+        title: '清理记录',
+        message: '确认清理当前全部记录吗？该操作会同时清空面板记录与本地同步快照。',
         confirmLabel: '确认清理',
         confirmVariant: 'btn-danger',
       });
@@ -497,19 +610,19 @@
       selectionMode = false;
       resetSelection();
       state.syncLatestState({ accountRunHistory: [] });
-      helpers.showToast?.(`已清理 ${Math.max(0, Number(response?.clearedCount) || 0)} 条邮箱记录。`, 'success', 2200);
+      helpers.showToast?.(`已清理 ${Math.max(0, Number(response?.clearedCount) || 0)} 条记录。`, 'success', 2200);
     }
 
     async function deleteSelectedRecords() {
       const recordIds = Array.from(selectedRecordIds).filter(Boolean);
       if (!recordIds.length) {
-        helpers.showToast?.('请先勾选要删除的邮箱记录。', 'warn', 1800);
+        helpers.showToast?.('请先勾选要删除的记录。', 'warn', 1800);
         return;
       }
 
       const confirmed = await helpers.openConfirmModal({
         title: '删除选中记录',
-        message: `确认删除选中的 ${recordIds.length} 条邮箱记录吗？该操作会同步更新本地 helper 快照。`,
+        message: `确认删除选中的 ${recordIds.length} 条记录吗？该操作会同步更新本地 helper 快照。`,
         confirmLabel: '确认删除',
         confirmVariant: 'btn-danger',
       });
@@ -534,7 +647,7 @@
 
       resetSelection();
       state.syncLatestState({ accountRunHistory: nextRecords });
-      helpers.showToast?.(`已删除 ${Math.max(0, Number(response?.deletedCount) || 0)} 条邮箱记录。`, 'success', 2200);
+      helpers.showToast?.(`已删除 ${Math.max(0, Number(response?.deletedCount) || 0)} 条记录。`, 'success', 2200);
     }
 
     function handleStatsClick(event) {
@@ -557,6 +670,13 @@
 
     function handleRecordListClick(event) {
       if (!selectionMode) {
+        const downloadNode = findClosest(event?.target, '[data-account-record-download]');
+        if (!downloadNode) {
+          return;
+        }
+        downloadRecords([getDatasetValue(downloadNode, 'data-account-record-download')]).catch((error) => {
+          helpers.showToast?.(`下载记录失败：${error.message}`, 'error');
+        });
         return;
       }
 
@@ -615,18 +735,25 @@
       dom.btnToggleAccountRecordsSelection?.addEventListener('click', () => {
         toggleSelectionMode();
       });
+      dom.btnDownloadAccountRecords?.addEventListener('click', async () => {
+        try {
+          await downloadRecords(selectionMode ? Array.from(selectedRecordIds) : []);
+        } catch (error) {
+          helpers.showToast?.(`下载记录失败：${error.message}`, 'error');
+        }
+      });
       dom.btnDeleteSelectedAccountRecords?.addEventListener('click', async () => {
         try {
           await deleteSelectedRecords();
         } catch (error) {
-          helpers.showToast?.(`删除邮箱记录失败：${error.message}`, 'error');
+          helpers.showToast?.(`删除记录失败：${error.message}`, 'error');
         }
       });
       dom.btnClearAccountRecords?.addEventListener('click', async () => {
         try {
           await clearRecords();
         } catch (error) {
-          helpers.showToast?.(`清理邮箱记录失败：${error.message}`, 'error');
+          helpers.showToast?.(`清理记录失败：${error.message}`, 'error');
         }
       });
     }
@@ -645,6 +772,7 @@
       clearRecords,
       closePanel,
       deleteSelectedRecords,
+      downloadRecords,
       openPanel,
       render,
       reset,

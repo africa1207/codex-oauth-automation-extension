@@ -373,13 +373,13 @@
         <input type="text" id="input-account-run-history-helper-base-url" class="data-input mono" placeholder="http://127.0.0.1:17373" />
       </div>
       <div class="data-row">
-      <span class="data-label">OAuth</span>
-      <span id="display-oauth-url" class="data-value mono truncate">等待中...</span>
+      <span class="data-label">Access Token</span>
+      <span id="display-access-token" class="data-value mono truncate">等待中...</span>
     </div>
     <div class="data-row">
-      <span class="data-label">回调</span>
+      <span class="data-label">Session</span>
       <div class="data-inline data-value-actions">
-        <span id="display-localhost-url" class="data-value data-value-fill mono truncate">等待中...</span>
+        <span id="display-session-summary" class="data-value data-value-fill mono truncate">等待中...</span>
         <button id="btn-save-settings" class="btn btn-outline btn-sm data-inline-btn" type="button">保存</button>
       </div>
     </div>
@@ -652,7 +652,7 @@
   <section id="steps-section">
     <div class="steps-header">
       <span class="section-label">流程</span>
-      <span id="steps-progress" class="steps-progress">0 / 9</span>
+      <span id="steps-progress" class="steps-progress">0 / 6</span>
     </div>
     <div class="steps-list"></div>
   </section>
@@ -683,6 +683,7 @@
         <div id="account-records-stats" class="account-records-stats" role="group" aria-label="邮箱记录筛选"></div>
         <div class="account-records-toolbar-actions">
           <button id="btn-toggle-account-records-selection" class="btn btn-ghost btn-xs" type="button">多选</button>
+          <button id="btn-download-account-records" class="btn btn-ghost btn-xs" type="button">下载 JSON</button>
           <button id="btn-delete-selected-account-records" class="btn btn-ghost btn-xs" type="button" hidden disabled>删除选中</button>
           <button id="btn-clear-account-records" class="btn btn-ghost btn-xs" type="button">清理记录</button>
         </div>

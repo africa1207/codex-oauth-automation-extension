@@ -180,6 +180,9 @@
         failedStep: Number.isInteger(failedStep) && failedStep > 0 ? failedStep : null,
         source,
         autoRunContext: source === 'auto' ? autoRunContext : null,
+        registrationResult: record.registrationResult && typeof record.registrationResult === 'object'
+          ? record.registrationResult
+          : null,
       };
     }
 
@@ -242,6 +245,20 @@
         failedStep: Number.isInteger(failedStep) && failedStep > 0 ? failedStep : null,
         source,
         autoRunContext,
+        registrationResult: finalStatus === 'success'
+          ? {
+              accessToken: String(state.chatgptAccessToken || '').trim() || null,
+              sessionToken: String(state.chatgptSessionToken || '').trim() || null,
+              authProvider: String(state.chatgptAuthProvider || '').trim() || null,
+              account: state.chatgptAccount && typeof state.chatgptAccount === 'object' ? state.chatgptAccount : null,
+              session: state.chatgptSession && typeof state.chatgptSession === 'object' ? state.chatgptSession : null,
+              sessionRaw: String(state.chatgptSessionRaw || ''),
+              sessionExpires: String(state.chatgptSessionExpires || '').trim() || null,
+              user: state.chatgptUser && typeof state.chatgptUser === 'object' ? state.chatgptUser : null,
+              userEmail: String(state.chatgptUserEmail || '').trim() || null,
+              userName: String(state.chatgptUserName || '').trim() || null,
+            }
+          : null,
       };
     }
 

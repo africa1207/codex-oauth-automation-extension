@@ -22,6 +22,7 @@ importScripts(
   'background/steps/fill-password.js',
   'background/steps/fetch-signup-code.js',
   'background/steps/fill-profile.js',
+  'background/steps/capture-chatgpt-session.js',
   'background/steps/clear-login-cookies.js',
   'background/steps/oauth-login.js',
   'background/steps/fetch-login-code.js',
@@ -4087,6 +4088,13 @@ function getDownstreamStateResets(step) {
   if (step <= 1) {
     return {
       oauthUrl: null,
+      chatgptAccessToken: null,
+      chatgptSession: null,
+      chatgptSessionRaw: '',
+      chatgptSessionExpires: null,
+      chatgptUser: null,
+      chatgptUserEmail: null,
+      chatgptUserName: null,
       sub2apiSessionId: null,
       sub2apiOAuthState: null,
       sub2apiGroupId: null,
@@ -4106,6 +4114,13 @@ function getDownstreamStateResets(step) {
   if (step === 2) {
     return {
       password: null,
+      chatgptAccessToken: null,
+      chatgptSession: null,
+      chatgptSessionRaw: '',
+      chatgptSessionExpires: null,
+      chatgptUser: null,
+      chatgptUserEmail: null,
+      chatgptUserName: null,
       lastEmailTimestamp: null,
       signupVerificationRequestedAt: null,
       loginVerificationRequestedAt: null,
@@ -4119,6 +4134,13 @@ function getDownstreamStateResets(step) {
   if (step === 3 || step === 4) {
     return {
       lastEmailTimestamp: null,
+      chatgptAccessToken: null,
+      chatgptSession: null,
+      chatgptSessionRaw: '',
+      chatgptSessionExpires: null,
+      chatgptUser: null,
+      chatgptUserEmail: null,
+      chatgptUserName: null,
       signupVerificationRequestedAt: null,
       loginVerificationRequestedAt: null,
       oauthFlowDeadlineAt: null,
@@ -4130,6 +4152,13 @@ function getDownstreamStateResets(step) {
   }
   if (step === 5 || step === 6 || step === 7 || step === 8) {
     return {
+      chatgptAccessToken: null,
+      chatgptSession: null,
+      chatgptSessionRaw: '',
+      chatgptSessionExpires: null,
+      chatgptUser: null,
+      chatgptUserEmail: null,
+      chatgptUserName: null,
       lastLoginCode: null,
       loginVerificationRequestedAt: null,
       oauthFlowDeadlineAt: null,
@@ -4976,8 +5005,8 @@ async function handleStepData(step, payload) {
 const stepWaiters = new Map();
 let resumeWaiter = null;
 const AUTO_RUN_SIGNAL_COMPLETION_TIMEOUT_MS = 120000;
-const AUTO_RUN_BACKGROUND_COMPLETED_STEPS = new Set([1, 2, 4, 6, 7, 8, 9]);
-const STEP_COMPLETION_SIGNAL_STEPS = new Set([3, 5, 10]);
+const AUTO_RUN_BACKGROUND_COMPLETED_STEPS = new Set([1, 2, 4, 7, 8, 9]);
+const STEP_COMPLETION_SIGNAL_STEPS = new Set([3, 5, 6, 10]);
 
 function waitForStepComplete(step, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
@@ -5023,10 +5052,10 @@ async function completeStepFromBackground(step, payload = {}) {
     return;
   }
 
-  const completionState = step === LAST_STEP_ID ? await getState() : null;
   await setStepStatus(step, 'completed');
   await addLog(`步骤 ${step} 已完成`, 'ok');
   await handleStepData(step, payload);
+  const completionState = step === LAST_STEP_ID ? await getState() : null;
   if (step === LAST_STEP_ID) {
     await appendAndBroadcastAccountRunRecord('success', completionState);
   }
@@ -6256,9 +6285,20 @@ const step5Executor = self.MultiPageBackgroundStep5?.createStep5Executor({
   generateRandomName,
   sendToContentScript,
 });
-const step6Executor = self.MultiPageBackgroundStep6?.createStep6Executor({
+const step6Executor = self.MultiPageBackgroundStep6SessionCapture?.createStep6SessionCaptureExecutor({
+  addLog,
+  chrome,
+  clearOpenAiSiteCookiesNow,
   completeStepFromBackground,
-  runPreStep6CookieCleanup,
+  ensureContentScriptReadyOnTab,
+  getTabId,
+  isTabAlive,
+  reuseOrCreateTab,
+  sendToContentScriptResilient,
+  SIGNUP_ENTRY_URL,
+  SIGNUP_PAGE_INJECT_FILES,
+  waitForTabComplete,
+  waitForTabUrlMatch,
 });
 const step7Executor = self.MultiPageBackgroundStep7?.createStep7Executor({
   addLog,
@@ -6329,7 +6369,7 @@ const stepExecutorsByKey = {
   'fill-password': (state) => step3Executor.executeStep3(state),
   'fetch-signup-code': (state) => step4Executor.executeStep4(state),
   'fill-profile': (state) => step5Executor.executeStep5(state),
-  'clear-login-cookies': () => step6Executor.executeStep6(),
+  'capture-chatgpt-session': () => step6Executor.executeStep6(),
   'oauth-login': (state) => step7Executor.executeStep7(state),
   'fetch-login-code': (state) => step8Executor.executeStep8(state),
   'confirm-oauth': (state) => step9Executor.executeStep9(state),
@@ -6377,6 +6417,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   findHotmailAccount,
   flushCommand,
   getCurrentLuckmailPurchase,
+  getPersistedAccountRunHistory: () => accountRunHistoryHelpers?.getPersistedAccountRunHistory?.() || [],
   getPendingAutoRunTimerPlan,
   getSourceLabel,
   getState,
@@ -6754,6 +6795,37 @@ async function runPreStep6CookieCleanup() {
   }
 
   await addLog(`步骤 6：已直接删除 ${removedCount} 个 ChatGPT / OpenAI cookies，准备继续获取链接并登录。`, 'ok');
+}
+
+async function clearOpenAiSiteCookiesNow(logLabel = '步骤 6') {
+  if (!chrome.cookies?.getAll || !chrome.cookies?.remove) {
+    await addLog(`${logLabel}：当前浏览器不支持 cookies API，无法直接删除 cookies。`, 'warn');
+    return 0;
+  }
+
+  const cookies = await collectCookiesForPreLoginCleanup();
+  let removedCount = 0;
+
+  for (const cookie of cookies) {
+    throwIfStopped();
+    if (await removeCookieDirectly(cookie)) {
+      removedCount += 1;
+    }
+  }
+
+  if (chrome.browsingData?.removeCookies) {
+    try {
+      await chrome.browsingData.removeCookies({
+        since: 0,
+        origins: PRE_LOGIN_COOKIE_CLEAR_ORIGINS,
+      });
+    } catch (err) {
+      await addLog(`${logLabel}：browsingData 补扫 cookies 失败：${getErrorMessage(err)}`, 'warn');
+    }
+  }
+
+  await addLog(`${logLabel}：已直接删除 ${removedCount} 个 ChatGPT / OpenAI cookies。`, 'ok');
+  return removedCount;
 }
 
 // ============================================================

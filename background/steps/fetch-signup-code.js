@@ -126,7 +126,7 @@
         filterAfterTimestamp: verificationFilterAfterTimestamp,
         sessionKey: verificationSessionKey,
         disableTimeBudgetCap: mail.provider === '2925',
-        requestFreshCodeFirst: mail.provider === HOTMAIL_PROVIDER ? false : true,
+        requestFreshCodeFirst: false,
         resendIntervalMs: (mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
           ? 0
           : STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS,

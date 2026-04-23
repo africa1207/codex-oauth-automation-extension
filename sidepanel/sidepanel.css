@@ -2222,6 +2222,17 @@ header {
   flex-shrink: 0;
 }
 
+.account-record-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.account-record-item-download {
+  flex-shrink: 0;
+}
+
 .account-record-item.is-success {
   border-color: color-mix(in srgb, var(--green) 14%, var(--border-subtle));
 }
