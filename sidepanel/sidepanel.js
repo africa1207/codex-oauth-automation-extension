@@ -23,6 +23,7 @@ const btnCloseAccountRecords = document.getElementById('btn-close-account-record
 const btnClearAccountRecords = document.getElementById('btn-clear-account-records');
 const btnToggleAccountRecordsSelection = document.getElementById('btn-toggle-account-records-selection');
 const btnDownloadAccountRecords = document.getElementById('btn-download-account-records');
+const btnCopyAccountRecordsAccessToken = document.getElementById('btn-copy-account-records-access-token');
 const btnDeleteSelectedAccountRecords = document.getElementById('btn-delete-selected-account-records');
 const updateSection = document.getElementById('update-section');
 const btnRepoHome = document.getElementById('btn-repo-home');
@@ -3366,6 +3367,7 @@ const accountRecordsManager = window.SidepanelAccountRecordsManager?.createAccou
     btnAccountRecordsNext,
     btnAccountRecordsPrev,
     btnClearAccountRecords,
+    btnCopyAccountRecordsAccessToken,
     btnDeleteSelectedAccountRecords,
     btnDownloadAccountRecords,
     btnCloseAccountRecords,
@@ -3373,6 +3375,7 @@ const accountRecordsManager = window.SidepanelAccountRecordsManager?.createAccou
     btnToggleAccountRecordsSelection,
   },
   helpers: {
+    copyTextToClipboard,
     escapeHtml,
     openConfirmModal,
     showToast,

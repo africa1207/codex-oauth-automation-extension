@@ -140,6 +140,7 @@ test('sidepanel html contains account records overlay and manager script', () =>
   assert.match(html, /id="btn-clear-account-records"/);
   assert.match(html, /id="btn-toggle-account-records-selection"/);
   assert.match(html, /id="btn-download-account-records"/);
+  assert.match(html, /id="btn-copy-account-records-access-token"/);
   assert.match(html, /id="btn-delete-selected-account-records"/);
   assert.match(html, /id="input-sub2api-default-proxy"/);
   assert.notEqual(managerIndex, -1);
@@ -191,6 +192,9 @@ test('account records manager supports filter chips and partial multi-select del
         finishedAt: '2026-04-17T04:31:00.000Z',
         retryCount: 0,
         failureLabel: '流程完成',
+        registrationResult: {
+          accessToken: 'token-success',
+        },
       },
       {
         recordId: 'failed@example.com',
@@ -200,6 +204,9 @@ test('account records manager supports filter chips and partial multi-select del
         finishedAt: '2026-04-17T04:29:00.000Z',
         retryCount: 2,
         failureLabel: '出现手机号验证',
+        registrationResult: {
+          accessToken: 'token-failed',
+        },
       },
       {
         recordId: 'stopped@example.com',
@@ -209,6 +216,9 @@ test('account records manager supports filter chips and partial multi-select del
         finishedAt: '2026-04-17T04:28:00.000Z',
         retryCount: 1,
         failureLabel: '步骤 7 停止',
+        registrationResult: {
+          accessToken: '',
+        },
       },
     ],
   };
@@ -218,6 +228,7 @@ test('account records manager supports filter chips and partial multi-select del
   const btnClearAccountRecords = createNode();
   const btnToggleAccountRecordsSelection = createNode();
   const btnDownloadAccountRecords = createNode();
+  const btnCopyAccountRecordsAccessToken = createNode();
   const btnDeleteSelectedAccountRecords = createNode({ hidden: true, disabled: true });
   const btnAccountRecordsPrev = createNode();
   const btnAccountRecordsNext = createNode();
@@ -228,6 +239,7 @@ test('account records manager supports filter chips and partial multi-select del
   const pageLabel = createNode();
   const messages = [];
   const toasts = [];
+  const copiedTexts = [];
   let manager = null;
 
   manager = api.createAccountRecordsManager({
@@ -251,12 +263,16 @@ test('account records manager supports filter chips and partial multi-select del
       btnAccountRecordsPrev,
       btnClearAccountRecords,
       btnCloseAccountRecords,
+      btnCopyAccountRecordsAccessToken,
       btnDeleteSelectedAccountRecords,
       btnDownloadAccountRecords,
       btnOpenAccountRecords,
       btnToggleAccountRecordsSelection,
     },
     helpers: {
+      copyTextToClipboard: async (value) => {
+        copiedTexts.push(String(value));
+      },
       escapeHtml: (value) => String(value || ''),
       openConfirmModal: async () => true,
       showToast(message, tone) {
@@ -306,6 +322,22 @@ test('account records manager supports filter chips and partial multi-select del
   assert.equal(pageLabel.textContent, '1 / 1');
   assert.equal(btnDeleteSelectedAccountRecords.hidden, true);
   assert.equal(btnDownloadAccountRecords.textContent, '下载 JSON');
+  assert.equal(btnCopyAccountRecordsAccessToken.textContent, '复制 accessToken');
+  assert.equal(btnCopyAccountRecordsAccessToken.disabled, false);
+
+  list.listeners.click({
+    target: createClosestTarget({
+      '[data-account-record-download]': null,
+      '[data-account-record-copy-token]': createDataNode('data-account-record-copy-token', 'success@example.com'),
+    }),
+  });
+  await flushPromises();
+
+  assert.deepStrictEqual(copiedTexts, ['token-success']);
+  assert.deepStrictEqual(toasts.at(-1), {
+    message: '已复制 1 条 accessToken。',
+    tone: 'success',
+  });
 
   stats.listeners.click({
     target: createClosestTarget({
@@ -326,6 +358,8 @@ test('account records manager supports filter chips and partial multi-select del
   assert.equal(btnDeleteSelectedAccountRecords.disabled, true);
   assert.equal(btnToggleAccountRecordsSelection.textContent, '取消多选');
   assert.equal(btnDownloadAccountRecords.textContent, '批量下载');
+  assert.equal(btnCopyAccountRecordsAccessToken.textContent, '批量复制 accessToken');
+  assert.equal(btnCopyAccountRecordsAccessToken.disabled, true);
 
   list.listeners.click({
     target: createClosestTarget({
@@ -337,20 +371,52 @@ test('account records manager supports filter chips and partial multi-select del
   assert.equal(btnDeleteSelectedAccountRecords.disabled, false);
   assert.match(btnDeleteSelectedAccountRecords.textContent, /删除选中\(1\)/);
   assert.equal(btnDownloadAccountRecords.textContent, '批量下载(1)');
+  assert.equal(btnCopyAccountRecordsAccessToken.textContent, '批量复制 accessToken(1)');
+  assert.equal(btnCopyAccountRecordsAccessToken.disabled, false);
   assert.match(list.innerHTML, /data-account-record-checkbox="failed@example\.com"[^>]*checked/);
+
+  list.listeners.click({
+    target: createClosestTarget({
+      '[data-account-record-toggle]': null,
+      '[data-account-record-id]': createDataNode('data-account-record-id', 'stopped@example.com'),
+    }),
+  });
+
+  assert.equal(btnCopyAccountRecordsAccessToken.textContent, '批量复制 accessToken(2)');
+  assert.equal(btnCopyAccountRecordsAccessToken.disabled, false);
+
+  await btnCopyAccountRecordsAccessToken.listeners.click();
+  await flushPromises();
+
+  assert.deepStrictEqual(copiedTexts, ['token-success', 'token-failed']);
+  assert.deepStrictEqual(toasts.at(-1), {
+    message: '已复制 1 条 accessToken。',
+    tone: 'success',
+  });
+
+  list.listeners.click({
+    target: createClosestTarget({
+      '[data-account-record-toggle]': null,
+      '[data-account-record-id]': createDataNode('data-account-record-id', 'stopped@example.com'),
+    }),
+  });
+
+  assert.equal(btnCopyAccountRecordsAccessToken.textContent, '批量复制 accessToken(1)');
+  assert.equal(btnDeleteSelectedAccountRecords.textContent, '删除选中(1)');
 
   await btnDeleteSelectedAccountRecords.listeners.click();
   await flushPromises();
 
-  assert.equal(messages.length, 1);
-  assert.equal(messages[0].type, 'DELETE_ACCOUNT_RUN_HISTORY_RECORDS');
-  assert.deepStrictEqual(messages[0].payload.recordIds, ['failed@example.com']);
+  const deleteMessage = messages.find((message) => message.type === 'DELETE_ACCOUNT_RUN_HISTORY_RECORDS');
+  assert.equal(Boolean(deleteMessage), true);
+  assert.deepStrictEqual(deleteMessage.payload.recordIds, ['failed@example.com']);
   assert.equal(latestState.accountRunHistory.length, 2);
   assert.equal(latestState.accountRunHistory.some((item) => item.email === 'failed@example.com'), false);
   assert.match(meta.textContent, /当前筛选 重试 1 条/);
   assert.doesNotMatch(list.innerHTML, /failed@example\.com/);
   assert.match(list.innerHTML, /stopped@example\.com/);
   assert.equal(btnDeleteSelectedAccountRecords.disabled, true);
+  assert.equal(btnCopyAccountRecordsAccessToken.disabled, true);
   assert.deepStrictEqual(toasts.at(-1), {
     message: '已删除 1 条记录。',
     tone: 'success',

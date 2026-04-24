@@ -143,6 +143,12 @@
       };
     }
 
+    function extractAccessToken(record = {}) {
+      const payload = buildExportJsonPayload(record);
+      const token = String(payload?.accessToken || '').trim();
+      return token || '';
+    }
+
     function getAccountRunRecords(currentState = state.getLatestState()) {
       return (Array.isArray(currentState?.accountRunHistory) ? currentState.accountRunHistory : [])
         .filter((item) => item && typeof item === 'object')
@@ -367,9 +373,19 @@
     function updateToolbarState(allRecords) {
       const totalRecords = allRecords.length;
       const selectedCount = selectedRecordIds.size;
+      const selectedRecords = selectionMode
+        ? allRecords.filter((record) => selectedRecordIds.has(buildRecordId(record)))
+        : [];
+      const copyReadyCount = selectionMode
+        ? selectedRecords.reduce((count, record) => count + (extractAccessToken(record) ? 1 : 0), 0)
+        : allRecords.reduce((count, record) => count + (extractAccessToken(record) ? 1 : 0), 0);
 
       setNodeDisabled(dom.btnClearAccountRecords, totalRecords === 0);
       setNodeDisabled(dom.btnDownloadAccountRecords, selectionMode ? selectedCount === 0 : totalRecords === 0);
+      setNodeDisabled(
+        dom.btnCopyAccountRecordsAccessToken,
+        selectionMode ? copyReadyCount === 0 : totalRecords === 0 || copyReadyCount === 0
+      );
       setNodeDisabled(dom.btnToggleAccountRecordsSelection, totalRecords === 0);
       setNodeHidden(dom.btnClearAccountRecords, selectionMode);
       toggleNodeClass(dom.btnToggleAccountRecordsSelection, 'is-active', selectionMode);
@@ -387,6 +403,12 @@
         selectionMode
           ? (selectedCount > 0 ? `批量下载(${selectedCount})` : '批量下载')
           : '下载 JSON'
+      );
+      setNodeText(
+        dom.btnCopyAccountRecordsAccessToken,
+        selectionMode
+          ? (selectedCount > 0 ? `批量复制 accessToken(${selectedCount})` : '批量复制 accessToken')
+          : '复制 accessToken'
       );
     }
 
@@ -464,6 +486,15 @@
               >下载 JSON</button>
             `
           : '';
+        const copyAccessTokenMarkup = !selectionMode
+          ? `
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs account-record-item-copy-token"
+                data-account-record-copy-token="${escapeHtml(recordId)}"
+              >复制 accessToken</button>
+            `
+          : '';
 
         return `
           <div
@@ -486,6 +517,7 @@
               <div class="account-record-item-actions">
                 <span class="account-record-item-retry mono">重试 ${escapeHtml(String(retryCount))}</span>
                 ${downloadMarkup}
+                ${copyAccessTokenMarkup}
               </div>
             </div>
           </div>
@@ -580,6 +612,43 @@
       helpers.showToast?.(`已下载 ${records.length} 条记录。`, 'success', 2200);
     }
 
+    async function copyRecordAccessTokens(recordIds = []) {
+      const response = await runtime.sendMessage({
+        type: 'EXPORT_ACCOUNT_RUN_HISTORY_RECORDS',
+        source: 'sidepanel',
+        payload: {
+          recordIds,
+        },
+      });
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+
+      const records = Array.isArray(response?.records) ? response.records : [];
+      if (!records.length) {
+        helpers.showToast?.('没有可复制的记录。', 'warn', 1800);
+        return;
+      }
+
+      const accessTokens = records
+        .map((record) => extractAccessToken(record))
+        .filter(Boolean);
+
+      if (!accessTokens.length) {
+        helpers.showToast?.('选中记录里没有可复制的 accessToken。', 'warn', 2200);
+        return;
+      }
+
+      await helpers.copyTextToClipboard?.(accessTokens.join('\n'));
+      helpers.showToast?.(
+        accessTokens.length === 1
+          ? '已复制 1 条 accessToken。'
+          : `已复制 ${accessTokens.length} 条 accessToken。`,
+        'success',
+        2200
+      );
+    }
+
     async function clearRecords() {
       const records = getAccountRunRecords();
       if (!records.length) {
@@ -671,11 +740,19 @@
     function handleRecordListClick(event) {
       if (!selectionMode) {
         const downloadNode = findClosest(event?.target, '[data-account-record-download]');
-        if (!downloadNode) {
+        if (downloadNode) {
+          downloadRecords([getDatasetValue(downloadNode, 'data-account-record-download')]).catch((error) => {
+            helpers.showToast?.(`下载记录失败：${error.message}`, 'error');
+          });
           return;
         }
-        downloadRecords([getDatasetValue(downloadNode, 'data-account-record-download')]).catch((error) => {
-          helpers.showToast?.(`下载记录失败：${error.message}`, 'error');
+
+        const copyNode = findClosest(event?.target, '[data-account-record-copy-token]');
+        if (!copyNode) {
+          return;
+        }
+        copyRecordAccessTokens([getDatasetValue(copyNode, 'data-account-record-copy-token')]).catch((error) => {
+          helpers.showToast?.(`复制 accessToken 失败：${error.message}`, 'error');
         });
         return;
       }
@@ -742,6 +819,13 @@
           helpers.showToast?.(`下载记录失败：${error.message}`, 'error');
         }
       });
+      dom.btnCopyAccountRecordsAccessToken?.addEventListener('click', async () => {
+        try {
+          await copyRecordAccessTokens(selectionMode ? Array.from(selectedRecordIds) : []);
+        } catch (error) {
+          helpers.showToast?.(`复制 accessToken 失败：${error.message}`, 'error');
+        }
+      });
       dom.btnDeleteSelectedAccountRecords?.addEventListener('click', async () => {
         try {
           await deleteSelectedRecords();
@@ -773,6 +857,7 @@
       closePanel,
       deleteSelectedRecords,
       downloadRecords,
+      copyRecordAccessTokens,
       openPanel,
       render,
       reset,
