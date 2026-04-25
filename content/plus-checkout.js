@@ -16,6 +16,7 @@ const PLUS_CHECKOUT_PAYLOAD = {
     is_coupon_from_query_param: false,
   },
 };
+const PAYPAL_DIAGNOSTIC_LOG_INTERVAL_MS = 5000;
 
 if (document.documentElement.getAttribute(PLUS_CHECKOUT_LISTENER_SENTINEL) !== '1') {
   document.documentElement.setAttribute(PLUS_CHECKOUT_LISTENER_SENTINEL, '1');
@@ -24,6 +25,12 @@ if (document.documentElement.getAttribute(PLUS_CHECKOUT_LISTENER_SENTINEL) !== '
     if (
       message.type === 'CREATE_PLUS_CHECKOUT'
       || message.type === 'FILL_PLUS_BILLING_AND_SUBMIT'
+      || message.type === 'PLUS_CHECKOUT_SELECT_PAYPAL'
+      || message.type === 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS'
+      || message.type === 'PLUS_CHECKOUT_FILL_ADDRESS_QUERY'
+      || message.type === 'PLUS_CHECKOUT_SELECT_ADDRESS_SUGGESTION'
+      || message.type === 'PLUS_CHECKOUT_ENSURE_BILLING_ADDRESS'
+      || message.type === 'PLUS_CHECKOUT_CLICK_SUBSCRIBE'
       || message.type === 'PLUS_CHECKOUT_GET_STATE'
     ) {
       resetStopState();
@@ -49,6 +56,18 @@ async function handlePlusCheckoutCommand(message) {
       return createPlusCheckoutSession();
     case 'FILL_PLUS_BILLING_AND_SUBMIT':
       return fillPlusBillingAndSubmit(message.payload || {});
+    case 'PLUS_CHECKOUT_SELECT_PAYPAL':
+      return selectPlusPayPalPaymentMethod();
+    case 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS':
+      return fillPlusBillingAddress(message.payload || {});
+    case 'PLUS_CHECKOUT_FILL_ADDRESS_QUERY':
+      return fillPlusAddressQuery(message.payload || {});
+    case 'PLUS_CHECKOUT_SELECT_ADDRESS_SUGGESTION':
+      return selectPlusAddressSuggestion(message.payload || {});
+    case 'PLUS_CHECKOUT_ENSURE_BILLING_ADDRESS':
+      return ensurePlusStructuredBillingAddress(message.payload || {});
+    case 'PLUS_CHECKOUT_CLICK_SUBSCRIBE':
+      return clickPlusSubscribe();
     case 'PLUS_CHECKOUT_GET_STATE':
       return inspectPlusCheckoutState();
     default:
@@ -103,6 +122,21 @@ function getActionText(el) {
   ].filter(Boolean).join(' '));
 }
 
+function getSearchText(el) {
+  const datasetValues = el?.dataset ? Object.values(el.dataset) : [];
+  return normalizeText([
+    getActionText(el),
+    el?.getAttribute?.('alt'),
+    el?.getAttribute?.('role'),
+    el?.getAttribute?.('data-testid'),
+    el?.getAttribute?.('src'),
+    el?.getAttribute?.('href'),
+    el?.getAttribute?.('xlink:href'),
+    typeof el?.className === 'string' ? el.className : el?.getAttribute?.('class'),
+    ...datasetValues,
+  ].filter(Boolean).join(' '));
+}
+
 function getFieldText(el) {
   const id = el?.id || '';
   const labels = [];
@@ -120,6 +154,13 @@ function getFieldText(el) {
   return normalizeText([
     getActionText(el),
     ...labels,
+  ].filter(Boolean).join(' '));
+}
+
+function getCombinedSearchText(el) {
+  return normalizeText([
+    getSearchText(el),
+    getFieldText(el),
   ].filter(Boolean).join(' '));
 }
 
@@ -161,6 +202,179 @@ function findInputByFieldText(patterns, options = {}) {
   }) || null;
 }
 
+function isDocumentLevelContainer(el) {
+  return !el
+    || el === document.documentElement
+    || el === document.body
+    || ['HTML', 'BODY', 'MAIN'].includes(el.tagName);
+}
+
+function isPaymentCardSized(el) {
+  if (!isVisibleElement(el) || isDocumentLevelContainer(el)) return false;
+  const rect = el.getBoundingClientRect();
+  const maxWidth = Math.max(320, Math.min(window.innerWidth * 0.95, 900));
+  const maxHeight = Math.max(140, Math.min(window.innerHeight * 0.45, 320));
+  return rect.width >= 64
+    && rect.height >= 28
+    && rect.width <= maxWidth
+    && rect.height <= maxHeight;
+}
+
+function findInteractiveAncestor(el) {
+  let current = el;
+  for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+    if (!isVisibleElement(current) || isDocumentLevelContainer(current)) continue;
+    if (current.matches?.('button, a, label, [role="button"], [role="radio"], input[type="radio"], [tabindex]')) {
+      return current;
+    }
+  }
+  return null;
+}
+
+function findPaymentCardAncestor(el, pattern) {
+  let current = el;
+  for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+    if (!isVisibleElement(current)) continue;
+    if (isDocumentLevelContainer(current)) break;
+    const text = getSearchText(current);
+    if (pattern.test(text) && isPaymentCardSized(current)) {
+      return current;
+    }
+  }
+  return null;
+}
+
+function getAncestorChainSummary(el, limit = 6) {
+  const chain = [];
+  let current = el;
+  for (let depth = 0; current && depth < limit; depth += 1, current = current.parentElement) {
+    if (isDocumentLevelContainer(current)) break;
+    const rect = current.getBoundingClientRect();
+    chain.push({
+      tag: String(current.tagName || '').toLowerCase(),
+      role: current.getAttribute?.('role') || '',
+      id: current.id || '',
+      className: typeof current.className === 'string' ? current.className.slice(0, 120) : '',
+      testId: current.getAttribute?.('data-testid') || '',
+      ariaLabel: current.getAttribute?.('aria-label') || '',
+      ariaChecked: current.getAttribute?.('aria-checked') || '',
+      ariaSelected: current.getAttribute?.('aria-selected') || '',
+      rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+      text: getCombinedSearchText(current).slice(0, 180),
+    });
+  }
+  return chain;
+}
+
+function getPayPalSearchCandidates() {
+  const selector = [
+    'button',
+    'a',
+    'label',
+    '[role="button"]',
+    '[role="radio"]',
+    'input[type="radio"]',
+    '[tabindex]',
+    '[data-testid]',
+    '[aria-label]',
+    '[title]',
+    'img',
+    'svg',
+    'span',
+    'div',
+  ].join(', ');
+
+  return getVisibleControls(selector)
+    .filter((el) => /paypal/i.test(getCombinedSearchText(el)))
+    .sort((left, right) => {
+      const leftRect = left.getBoundingClientRect();
+      const rightRect = right.getBoundingClientRect();
+      return (leftRect.width * leftRect.height) - (rightRect.width * rightRect.height);
+    });
+}
+
+function findPayPalPaymentMethodTarget() {
+  const paypalPattern = /paypal/i;
+  const directClickable = findClickableByText([paypalPattern]);
+  if (directClickable) {
+    return directClickable;
+  }
+
+  const radios = getVisibleControls('input[type="radio"], [role="radio"]');
+  const paypalRadio = radios.find((el) => paypalPattern.test(getCombinedSearchText(el)));
+  if (paypalRadio) {
+    return paypalRadio;
+  }
+
+  const candidates = getPayPalSearchCandidates();
+  for (const candidate of candidates) {
+    const interactive = findInteractiveAncestor(candidate);
+    if (interactive && paypalPattern.test(getCombinedSearchText(interactive))) {
+      return interactive;
+    }
+    const card = findPaymentCardAncestor(candidate, paypalPattern);
+    if (card) {
+      return card;
+    }
+  }
+
+  return null;
+}
+
+function summarizeElementForDebug(el) {
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  return {
+    tag: String(el.tagName || '').toLowerCase(),
+    role: el.getAttribute?.('role') || '',
+    text: getSearchText(el).slice(0, 160),
+    rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+    chain: getAncestorChainSummary(el, 3),
+  };
+}
+
+function getPayPalCandidateSummaries(limit = 6) {
+  return getPayPalSearchCandidates()
+    .map(summarizeElementForDebug)
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function getPaymentTextPreview(limit = 10) {
+  const seen = new Set();
+  const pattern = /paypal|card|payment|billing|subscribe|pay|银行卡|付款|支付|账单|订阅/i;
+  return getVisibleControls('button, a, label, [role="button"], [role="radio"], input[type="radio"], input[type="button"], input[type="submit"], [data-testid]')
+    .map((el) => getCombinedSearchText(el))
+    .filter((text) => text && pattern.test(text))
+    .map((text) => text.slice(0, 180))
+    .filter((text) => {
+      if (seen.has(text)) return false;
+      seen.add(text);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+function getPayPalDiagnostics(reason = '') {
+  return {
+    reason,
+    url: location.href,
+    readyState: document.readyState,
+    paypalCandidates: getPayPalCandidateSummaries(),
+    paymentTextPreview: getPaymentTextPreview(),
+    cardFieldsVisible: hasCreditCardFields(),
+    billingFieldsVisible: hasBillingAddressFields(),
+  };
+}
+
+function writePayPalDiagnostics(reason, level = 'info') {
+  const diagnostics = getPayPalDiagnostics(reason);
+  const writer = typeof console[level] === 'function' ? console[level] : console.info;
+  writer.call(console, '[MultiPage:plus-checkout] PayPal diagnostics', diagnostics);
+  log(`Plus Checkout：${reason}。PayPal 候选 ${diagnostics.paypalCandidates.length} 个，银行卡字段${diagnostics.cardFieldsVisible ? '仍可见' : '不可见'}。`, level === 'error' ? 'error' : 'warn');
+  return diagnostics;
+}
+
 async function createPlusCheckoutSession() {
   await waitForDocumentComplete();
   log('Plus：正在读取 ChatGPT 登录会话...');
@@ -199,23 +413,42 @@ async function createPlusCheckoutSession() {
 }
 
 async function selectPayPalPaymentMethod() {
-  const paypalPattern = /paypal/i;
-  const existingSelected = findClickableByText([/paypal/i]);
-  if (existingSelected) {
-    simulateClick(existingSelected);
-    await sleep(600);
-    return true;
+  let lastDiagnosticsAt = 0;
+  const target = await waitUntil(() => {
+    const currentTarget = findPayPalPaymentMethodTarget();
+    if (currentTarget) {
+      return currentTarget;
+    }
+
+    const now = Date.now();
+    if (!lastDiagnosticsAt || now - lastDiagnosticsAt >= PAYPAL_DIAGNOSTIC_LOG_INTERVAL_MS) {
+      lastDiagnosticsAt = now;
+      writePayPalDiagnostics('正在等待可点击的 PayPal 付款方式', 'warn');
+    }
+    return null;
+  }, {
+    label: 'PayPal 付款方式',
+    intervalMs: 250,
+  });
+  console.info('[MultiPage:plus-checkout] PayPal target selected', summarizeElementForDebug(target));
+  simulateClick(target);
+  await sleep(1000);
+
+  if (!isPayPalPaymentMethodActive()) {
+    const diagnostics = writePayPalDiagnostics('点击 PayPal 后页面仍未进入 PayPal 账单表单', 'error');
+    throw new Error(`Plus Checkout：已尝试点击 PayPal，但页面未切换到 PayPal 表单。请提供控制台 PayPal diagnostics 结构。候选数量：${diagnostics.paypalCandidates.length}，银行卡字段仍可见：${diagnostics.cardFieldsVisible ? '是' : '否'}。`);
   }
 
-  const radios = getVisibleControls('input[type="radio"], [role="radio"]');
-  const paypalRadio = radios.find((el) => paypalPattern.test(getFieldText(el)));
-  if (paypalRadio) {
-    simulateClick(paypalRadio);
-    await sleep(600);
-    return true;
-  }
+  log('Plus Checkout：已确认 PayPal 付款方式生效。');
+  return true;
+}
 
-  throw new Error('Plus Checkout：未找到 PayPal 付款方式。');
+async function selectPlusPayPalPaymentMethod() {
+  await waitForDocumentComplete();
+  await selectPayPalPaymentMethod();
+  return {
+    paymentSelected: true,
+  };
 }
 
 async function fillFullName(fullName) {
@@ -251,13 +484,59 @@ function readCountryText() {
 
 function isLikelyAddressSearchInput(input) {
   const text = getFieldText(input);
-  if (/name|email|e-mail|phone|tel|password|coupon|promo|country|region|postal|zip|city|state|province|全名|姓名|邮箱|电话|密码|国家|地区|邮编|城市|省|州/i.test(text)) {
+  if (/name|email|e-mail|phone|tel|password|coupon|promo|country|region|postal|zip|city|state|province|card|card\s*number|expiry|expiration|security|cvc|cvv|cc-|全名|姓名|邮箱|电话|密码|国家|地区|邮编|城市|省|州|银行卡|卡号|有效期|安全码/i.test(text)) {
     return false;
   }
   if (/address|street|billing|search|line\s*1|地址|街道|账单/i.test(text)) {
     return true;
   }
   return false;
+}
+
+function hasCreditCardFields() {
+  return getVisibleTextInputs().some((input) => {
+    const text = getFieldText(input);
+    return /card\s*number|card|expiry|expiration|security\s*code|cvc|cvv|银行卡|卡号|有效期|安全码/i.test(text);
+  });
+}
+
+function hasBillingAddressFields() {
+  return getVisibleTextInputs().some((input) => {
+    const text = getFieldText(input);
+    return /address|street|billing|line\s*1|地址|街道|账单/i.test(text)
+      && !/card\s*number|card|expiry|expiration|security|cvc|cvv|银行卡|卡号|有效期|安全码/i.test(text);
+  });
+}
+
+function hasSelectedPayPalControl() {
+  const paypalPattern = /paypal/i;
+  const candidates = getPayPalSearchCandidates();
+  return candidates.some((candidate) => {
+    let current = candidate;
+    for (let depth = 0; current && depth < 6; depth += 1, current = current.parentElement) {
+      if (isDocumentLevelContainer(current)) break;
+      if (!paypalPattern.test(getCombinedSearchText(current))) continue;
+      const className = typeof current.className === 'string' ? current.className : current.getAttribute?.('class') || '';
+      if (
+        current.checked === true
+        || current.getAttribute?.('aria-checked') === 'true'
+        || current.getAttribute?.('aria-selected') === 'true'
+        || current.getAttribute?.('data-state') === 'checked'
+        || current.getAttribute?.('data-selected') === 'true'
+        || /\b(selected|checked|active)\b/i.test(className)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
+function isPayPalPaymentMethodActive() {
+  if (hasSelectedPayPalControl()) {
+    return true;
+  }
+  return getPayPalSearchCandidates().length > 0 && !hasCreditCardFields();
 }
 
 async function findAddressSearchInput() {
@@ -302,10 +581,11 @@ function getAddressSuggestions() {
 }
 
 async function selectAddressSuggestion(seed) {
-  const addressInput = await findAddressSearchInput();
-  fillInput(addressInput, seed.query || 'Berlin Mitte');
-  await sleep(800);
+  await fillAddressQuery(seed);
+  return clickAddressSuggestion(seed);
+}
 
+async function clickAddressSuggestion(seed = {}) {
   const suggestions = await waitUntil(() => {
     const options = getAddressSuggestions();
     return options.length ? options : null;
@@ -324,6 +604,15 @@ async function selectAddressSuggestion(seed) {
   return {
     selectedText: normalizeText(target.textContent || ''),
     suggestionIndex,
+  };
+}
+
+async function fillAddressQuery(seed = {}) {
+  const addressInput = await findAddressSearchInput();
+  fillInput(addressInput, seed.query || 'Berlin Mitte');
+  await sleep(800);
+  return {
+    filled: true,
   };
 }
 
@@ -404,6 +693,24 @@ function findSubscribeButton() {
 async function fillPlusBillingAndSubmit(payload = {}) {
   await waitForDocumentComplete();
   await selectPayPalPaymentMethod();
+  const billingResult = await fillPlusBillingAddress(payload);
+
+  if (payload.skipSubmit) {
+    return {
+      ...billingResult,
+      submitted: false,
+    };
+  }
+
+  await clickPlusSubscribe();
+  return {
+    ...billingResult,
+    submitted: true,
+  };
+}
+
+async function fillPlusBillingAddress(payload = {}) {
+  await waitForDocumentComplete();
   await fillFullName(payload.fullName || '');
 
   const countryText = readCountryText();
@@ -420,6 +727,43 @@ async function fillPlusBillingAndSubmit(payload = {}) {
   const selected = await selectAddressSuggestion(seed);
   const structuredAddress = await ensureStructuredAddress(seed);
 
+  return {
+    countryText,
+    selectedAddressText: selected.selectedText,
+    structuredAddress,
+  };
+}
+
+async function fillPlusAddressQuery(payload = {}) {
+  await waitForDocumentComplete();
+  await fillFullName(payload.fullName || '');
+  const seed = payload.addressSeed || {};
+  await fillAddressQuery(seed);
+  return {
+    countryText: readCountryText(),
+    queryFilled: true,
+  };
+}
+
+async function selectPlusAddressSuggestion(payload = {}) {
+  await waitForDocumentComplete();
+  const selected = await clickAddressSuggestion(payload.addressSeed || {});
+  return {
+    selectedAddressText: selected.selectedText,
+    suggestionIndex: selected.suggestionIndex,
+  };
+}
+
+async function ensurePlusStructuredBillingAddress(payload = {}) {
+  await waitForDocumentComplete();
+  const structuredAddress = await ensureStructuredAddress(payload.addressSeed || {});
+  return {
+    countryText: readCountryText(),
+    structuredAddress,
+  };
+}
+
+async function clickPlusSubscribe() {
   const subscribeButton = await waitUntil(() => {
     const button = findSubscribeButton();
     return button && isEnabledControl(button) ? button : null;
@@ -430,9 +774,7 @@ async function fillPlusBillingAndSubmit(payload = {}) {
 
   simulateClick(subscribeButton);
   return {
-    countryText,
-    selectedAddressText: selected.selectedText,
-    structuredAddress,
+    clicked: true,
   };
 }
 
@@ -442,7 +784,11 @@ function inspectPlusCheckoutState() {
     url: location.href,
     readyState: document.readyState,
     countryText: readCountryText(),
-    hasPayPal: Boolean(findClickableByText([/paypal/i])),
+    hasPayPal: Boolean(findPayPalPaymentMethodTarget()),
+    paypalCandidates: getPayPalCandidateSummaries(),
+    paymentTextPreview: getPaymentTextPreview(),
+    cardFieldsVisible: hasCreditCardFields(),
+    billingFieldsVisible: hasBillingAddressFields(),
     hasSubscribeButton: Boolean(findSubscribeButton()),
     addressFieldValues: {
       address1: structuredAddress.address1?.value || '',

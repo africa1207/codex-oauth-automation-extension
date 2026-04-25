@@ -6915,6 +6915,7 @@ const plusCheckoutCreateExecutor = self.MultiPageBackgroundPlusCheckoutCreate?.c
 });
 const plusCheckoutBillingExecutor = self.MultiPageBackgroundPlusCheckoutBilling?.createPlusCheckoutBillingExecutor({
   addLog,
+  chrome,
   completeStepFromBackground,
   ensureContentScriptReadyOnTabUntilStopped,
   generateRandomName,
