@@ -27,6 +27,7 @@
     const DEFAULT_PHONE_SUBMIT_ATTEMPTS = 3;
     const DEFAULT_PHONE_CODE_WAIT_WINDOW_MS = 60000;
     const DEFAULT_PHONE_NUMBER_MAX_USES = 3;
+    const DEFAULT_PHONE_PRICE_LOOKUP_ATTEMPTS = 3;
     const PHONE_CODE_TIMEOUT_ERROR_PREFIX = 'PHONE_CODE_TIMEOUT::';
     const PHONE_RESTART_STEP7_ERROR_PREFIX = 'PHONE_RESTART_STEP7::';
 
@@ -70,6 +71,7 @@
       if (!activationId || !phoneNumber) {
         return null;
       }
+      const statusAction = String(record.statusAction || '').trim();
       return {
         activationId,
         phoneNumber,
@@ -78,6 +80,7 @@
         countryId: Number(record.countryId) || HERO_SMS_COUNTRY_ID,
         successfulUses: normalizeUseCount(record.successfulUses),
         maxUses: Math.max(1, Math.floor(Number(record.maxUses) || DEFAULT_PHONE_NUMBER_MAX_USES)),
+        ...(statusAction ? { statusAction } : {}),
       };
     }
 
@@ -182,7 +185,10 @@
         const text = await response.text();
         const payload = parseHeroSmsPayload(text);
         if (!response.ok) {
-          throw new Error(`${actionLabel} failed: ${describeHeroSmsPayload(payload) || response.status}`);
+          const requestError = new Error(`${actionLabel} failed: ${describeHeroSmsPayload(payload) || response.status}`);
+          requestError.payload = payload;
+          requestError.status = response.status;
+          throw requestError;
         }
         return payload;
       } catch (error) {
@@ -212,10 +218,15 @@
       const normalizedFallback = normalizeActivation(fallback);
       const directActivation = normalizeActivation(payload);
       if (directActivation) {
+        const statusAction = normalizedFallback?.statusAction || directActivation.statusAction;
         return {
           ...directActivation,
+          provider: normalizedFallback?.provider || directActivation.provider,
+          serviceCode: normalizedFallback?.serviceCode || directActivation.serviceCode,
+          countryId: normalizedFallback?.countryId || directActivation.countryId,
           successfulUses: normalizedFallback?.successfulUses || directActivation.successfulUses,
           maxUses: normalizedFallback?.maxUses || directActivation.maxUses,
+          ...(statusAction ? { statusAction } : {}),
         };
       }
 
@@ -230,6 +241,7 @@
           countryId: normalizedFallback?.countryId || HERO_SMS_COUNTRY_ID,
           successfulUses: normalizedFallback?.successfulUses || 0,
           maxUses: normalizedFallback?.maxUses || DEFAULT_PHONE_NUMBER_MAX_USES,
+          ...(normalizedFallback?.statusAction ? { statusAction: normalizedFallback.statusAction } : {}),
         };
       }
 
@@ -240,21 +252,178 @@
       return null;
     }
 
+    function resolveActivationStatusAction(activation) {
+      return activation?.statusAction === 'getStatusV2' ? 'getStatusV2' : 'getStatus';
+    }
+
+    function normalizeHeroSmsPrice(value) {
+      const price = Number(value);
+      if (!Number.isFinite(price) || price < 0) {
+        return null;
+      }
+      return price;
+    }
+
+    function collectHeroSmsPriceCandidates(payload, candidates = []) {
+      if (Array.isArray(payload)) {
+        payload.forEach((entry) => collectHeroSmsPriceCandidates(entry, candidates));
+        return candidates;
+      }
+      if (!payload || typeof payload !== 'object') {
+        return candidates;
+      }
+
+      const cost = normalizeHeroSmsPrice(payload.cost);
+      if (cost !== null) {
+        const count = Number(payload.count);
+        const physicalCount = Number(payload.physicalCount);
+        const hasCount = Number.isFinite(count);
+        const hasPhysicalCount = Number.isFinite(physicalCount);
+        if ((!hasCount && !hasPhysicalCount) || count > 0 || physicalCount > 0) {
+          candidates.push(cost);
+        }
+      }
+
+      Object.values(payload).forEach((value) => collectHeroSmsPriceCandidates(value, candidates));
+      return candidates;
+    }
+
+    function findLowestHeroSmsPrice(payload) {
+      const candidates = collectHeroSmsPriceCandidates(payload, []);
+      if (!candidates.length) {
+        return null;
+      }
+      return Math.min(...candidates);
+    }
+
+    function isHeroSmsNoNumbersPayload(payload) {
+      return /\bNO_NUMBERS\b/i.test(describeHeroSmsPayload(payload));
+    }
+
+    function extractHeroSmsWrongMaxPrice(payload) {
+      if (payload && typeof payload === 'object') {
+        const title = String(payload.title || '').trim();
+        const minPrice = normalizeHeroSmsPrice(payload.info?.min);
+        if (/^WRONG_MAX_PRICE$/i.test(title) && minPrice !== null) {
+          return minPrice;
+        }
+      }
+
+      const text = describeHeroSmsPayload(payload);
+      const match = text.match(/\bWRONG_MAX_PRICE:(\d+(?:\.\d+)?)\b/i);
+      if (!match) {
+        return null;
+      }
+      return normalizeHeroSmsPrice(match[1]);
+    }
+
+    function isNetworkFetchFailure(error) {
+      const message = String(error?.message || '').trim();
+      return /failed to fetch|networkerror|load failed/i.test(message);
+    }
+
+    async function resolveCheapestPhoneActivationPrice(config, countryConfig) {
+      for (let attempt = 1; attempt <= DEFAULT_PHONE_PRICE_LOOKUP_ATTEMPTS; attempt += 1) {
+        try {
+          const payload = await fetchHeroSmsPayload(config, {
+            action: 'getPrices',
+            service: HERO_SMS_SERVICE_CODE,
+            country: countryConfig.id,
+          }, 'HeroSMS getPrices');
+          const price = findLowestHeroSmsPrice(payload);
+          if (price !== null) {
+            return price;
+          }
+        } catch (_) {
+          // Best-effort lookup only.
+        }
+      }
+      return null;
+    }
+
+    async function fetchPhoneActivationPayload(config, countryConfig, action, options = {}) {
+      const query = {
+        action,
+        service: HERO_SMS_SERVICE_CODE,
+        country: countryConfig.id,
+      };
+      if (options.maxPrice !== null && options.maxPrice !== undefined) {
+        query.maxPrice = options.maxPrice;
+        query.fixedPrice = 'true';
+      }
+      return fetchHeroSmsPayload(config, query, `HeroSMS ${action}`);
+    }
+
+    async function requestPhoneActivationWithPrice(config, countryConfig, action, maxPrice) {
+      let nextMaxPrice = maxPrice;
+      let retriedWithUpdatedPrice = false;
+      let retriedWithoutPrice = false;
+
+      while (true) {
+        try {
+          return await fetchPhoneActivationPayload(config, countryConfig, action, {
+            maxPrice: nextMaxPrice,
+          });
+        } catch (error) {
+          const updatedMaxPrice = extractHeroSmsWrongMaxPrice(error?.payload || error?.message);
+          if (
+            nextMaxPrice !== null
+            && nextMaxPrice !== undefined
+            && !retriedWithUpdatedPrice
+            && updatedMaxPrice !== null
+          ) {
+            nextMaxPrice = updatedMaxPrice;
+            retriedWithUpdatedPrice = true;
+            continue;
+          }
+
+          if (
+            nextMaxPrice !== null
+            && nextMaxPrice !== undefined
+            && !retriedWithoutPrice
+            && isNetworkFetchFailure(error)
+          ) {
+            nextMaxPrice = null;
+            retriedWithoutPrice = true;
+            continue;
+          }
+
+          throw error;
+        }
+      }
+    }
+
     async function requestPhoneActivation(state = {}) {
       const config = resolvePhoneConfig(state);
       const countryConfig = resolveCountryConfig(state);
-      const payload = await fetchHeroSmsPayload(config, {
-        action: 'getNumber',
-        service: HERO_SMS_SERVICE_CODE,
-        country: countryConfig.id,
-      }, 'HeroSMS getNumber');
-
-      const activation = parseActivationPayload(payload, {
+      const maxPrice = await resolveCheapestPhoneActivationPrice(config, countryConfig);
+      const buildFallbackActivation = (requestAction) => ({
         countryId: countryConfig.id,
+        ...(requestAction === 'getNumberV2' ? { statusAction: 'getStatusV2' } : {}),
       });
+      let requestAction = 'getNumber';
+      let payload;
+
+      try {
+        payload = await requestPhoneActivationWithPrice(config, countryConfig, requestAction, maxPrice);
+      } catch (error) {
+        if (!isHeroSmsNoNumbersPayload(error?.payload || error?.message)) {
+          throw error;
+        }
+        requestAction = 'getNumberV2';
+        payload = await requestPhoneActivationWithPrice(config, countryConfig, requestAction, maxPrice);
+      }
+
+      let activation = parseActivationPayload(payload, buildFallbackActivation(requestAction));
+      if (!activation && requestAction === 'getNumber' && isHeroSmsNoNumbersPayload(payload)) {
+        requestAction = 'getNumberV2';
+        payload = await requestPhoneActivationWithPrice(config, countryConfig, requestAction, maxPrice);
+        activation = parseActivationPayload(payload, buildFallbackActivation(requestAction));
+      }
+
       if (!activation) {
         const text = describeHeroSmsPayload(payload);
-        throw new Error(`HeroSMS getNumber failed: ${text || 'empty response'}`);
+        throw new Error(`HeroSMS ${requestAction} failed: ${text || 'empty response'}`);
       }
 
       return activation;
@@ -318,6 +487,7 @@
       if (!normalizedActivation) {
         throw new Error('Phone activation is missing.');
       }
+      const statusAction = resolveActivationStatusAction(normalizedActivation);
 
       const config = resolvePhoneConfig(state);
       const configuredTimeoutMs = Math.max(1000, Number(options.timeoutMs) || 0);
@@ -337,9 +507,9 @@
       while (Date.now() - start < timeoutMs) {
         throwIfStopped();
         const payload = await fetchHeroSmsPayload(config, {
-          action: 'getStatus',
+          action: statusAction,
           id: normalizedActivation.activationId,
-        }, 'HeroSMS getStatus');
+        }, `HeroSMS ${statusAction}`);
         const text = describeHeroSmsPayload(payload);
         lastResponse = text;
         pollCount += 1;
@@ -354,6 +524,28 @@
           });
         }
 
+        const extractVerificationCode = (rawCode) => {
+          const trimmed = String(rawCode || '').trim();
+          if (!trimmed) {
+            return '';
+          }
+          const digitMatch = trimmed.match(/\b(\d{4,8})\b/);
+          return digitMatch?.[1] || trimmed;
+        };
+
+        const v2Code = (
+          payload
+          && typeof payload === 'object'
+          && !Array.isArray(payload)
+          && (
+            extractVerificationCode(payload.sms?.code)
+            || extractVerificationCode(payload.call?.code)
+          )
+        );
+        if (v2Code) {
+          return v2Code;
+        }
+
         const okMatch = text.match(/^STATUS_OK:(.+)$/i);
         if (okMatch) {
           const rawCode = String(okMatch[1] || '').trim();
@@ -366,11 +558,16 @@
           continue;
         }
 
+        if (statusAction === 'getStatusV2' && payload && typeof payload === 'object' && !Array.isArray(payload)) {
+          await sleepWithStop(intervalMs);
+          continue;
+        }
+
         if (/^STATUS_CANCEL$/i.test(text)) {
           throw new Error('HeroSMS activation was cancelled before the SMS arrived.');
         }
 
-        throw new Error(`HeroSMS getStatus failed: ${text || 'empty response'}`);
+        throw new Error(`HeroSMS ${statusAction} failed: ${text || 'empty response'}`);
       }
 
       throw buildPhoneCodeTimeoutError(lastResponse);
