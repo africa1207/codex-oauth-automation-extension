@@ -6,7 +6,7 @@ const source = fs.readFileSync('background/steps/create-plus-checkout.js', 'utf8
 const globalScope = {};
 const api = new Function('self', `${source}; return self.MultiPageBackgroundPlusCheckoutCreate;`)(globalScope);
 
-test('Plus checkout create waits 20 seconds before completing step 6', async () => {
+test('Plus checkout create does not wait 20 seconds after opening checkout page', async () => {
   const events = [];
   const executor = api.createPlusCheckoutCreateExecutor({
     addLog: async (message, level = 'info') => {
@@ -45,11 +45,12 @@ test('Plus checkout create waits 20 seconds before completing step 6', async () 
   await executor.executePlusCheckoutCreate();
 
   const sleepEvents = events.filter((event) => event.type === 'sleep');
-  assert.deepStrictEqual(sleepEvents.map((event) => event.ms), [1000, 1000, 20000]);
+  assert.deepStrictEqual(sleepEvents.map((event) => event.ms), [1000, 1000]);
 
-  const fixedWaitIndex = events.findIndex((event) => event.type === 'sleep' && event.ms === 20000);
   const completeIndex = events.findIndex((event) => event.type === 'complete');
-  assert.ok(fixedWaitIndex > -1);
-  assert.ok(completeIndex > fixedWaitIndex);
-  assert.equal(events.some((event) => event.type === 'log' && /固定等待 20 秒/.test(event.message)), true);
+  const readyLogIndex = events.findIndex((event) => event.type === 'log' && /Plus Checkout 页面已就绪/.test(event.message));
+  assert.ok(readyLogIndex > -1);
+  assert.ok(completeIndex > readyLogIndex);
+  assert.equal(events.some((event) => event.type === 'sleep' && event.ms === 20000), false);
+  assert.equal(events.some((event) => event.type === 'log' && /固定等待 20 秒后继续下一步/.test(event.message)), false);
 });

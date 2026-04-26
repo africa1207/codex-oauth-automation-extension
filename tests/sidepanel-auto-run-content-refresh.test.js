@@ -57,6 +57,7 @@ function createApi({
   plusRiskEnabled = false,
   plusRiskConfirmed = true,
   plusRiskDismissPrompt = false,
+  plusContributionImpl,
 } = {}) {
   const bundle = extractFunction('startAutoRunFromCurrentSettings');
 
@@ -109,6 +110,9 @@ async function openPlusAutoRunRiskConfirmModal(totalRuns) {
 }
 function setAutoRunPlusRiskPromptDismissed(dismissed) {
   events.push({ type: 'plus-risk-dismiss', dismissed });
+}
+async function maybeShowPlusContributionPromptBeforeAutoRun(plusModeEnabled) {
+  ${plusContributionImpl ? 'return (' + plusContributionImpl + ')(plusModeEnabled, events);' : 'return true;'}
 }
 function normalizeAutoDelayMinutes(value) { return Number(value) || 30; }
 async function refreshContributionContentHint() {
@@ -215,4 +219,23 @@ test('startAutoRunFromCurrentSettings aborts when Plus risk warning is declined'
     api.getEvents().map((entry) => entry.type),
     ['refresh', 'confirm-check', 'plus-risk-modal']
   );
+});
+
+test('startAutoRunFromCurrentSettings aborts when Plus contribution prompt opens contribution page', async () => {
+  const api = createApi({
+    plusModeEnabled: true,
+    plusContributionImpl: `async (plusModeEnabled, events) => {
+      events.push({ type: 'plus-contribution-modal', plusModeEnabled });
+      return false;
+    }`,
+  });
+
+  const result = await api.startAutoRunFromCurrentSettings();
+
+  assert.equal(result, false);
+  assert.deepEqual(
+    api.getEvents().map((entry) => entry.type),
+    ['refresh', 'confirm-check', 'plus-contribution-modal']
+  );
+  assert.equal(api.getEvents()[2].plusModeEnabled, true);
 });

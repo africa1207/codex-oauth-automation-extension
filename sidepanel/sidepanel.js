@@ -278,6 +278,7 @@ const NEW_USER_GUIDE_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-new-user-guide-pr
 const AUTO_SKIP_FAILURES_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-skip-failures-prompt-dismissed';
 const AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-fallback-risk-prompt-dismissed';
 const AUTO_RUN_PLUS_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-plus-risk-prompt-dismissed';
+const PLUS_CONTRIBUTION_PROMPT_LEDGER_STORAGE_KEY = 'multipage-plus-contribution-prompt-ledger';
 
 function getStepDefinitionsForMode(plusModeEnabled = false) {
   return (window.MultiPageStepDefinitions?.getSteps?.({ plusModeEnabled }) || [])
@@ -299,6 +300,9 @@ function rebuildStepDefinitionState(plusModeEnabled = false) {
 const CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY = 'multipage-contribution-content-prompt-dismissed-version';
 const AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS = 3;
 const AUTO_RUN_PLUS_RISK_WARNING_MAX_SAFE_RUNS = 3;
+const PLUS_CONTRIBUTION_PROMPT_THRESHOLD = 5;
+const PLUS_CONTRIBUTION_ACCOUNT_CREDIT = 5;
+const PLUS_CONTRIBUTION_DONATION_CREDIT = 20;
 const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 const ICLOUD_PROVIDER = 'icloud';
@@ -1038,6 +1042,147 @@ function shouldWarnAutoRunFallbackRisk(totalRuns, autoRunSkipFailures) {
 function shouldWarnPlusAutoRunRisk(totalRuns, plusModeEnabled) {
   return Boolean(plusModeEnabled)
     && Math.floor(Number(totalRuns) || 0) > AUTO_RUN_PLUS_RISK_WARNING_MAX_SAFE_RUNS;
+}
+
+function normalizePlusContributionPromptNumber(value) {
+  const number = Math.floor(Number(value) || 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function normalizePlusContributionPromptLedger(value = {}) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    promptBaseline: normalizePlusContributionPromptNumber(source.promptBaseline),
+    donationCredit: Math.max(0, normalizePlusContributionPromptNumber(source.donationCredit)),
+  };
+}
+
+function getPlusContributionPromptLedger() {
+  try {
+    return normalizePlusContributionPromptLedger(
+      JSON.parse(localStorage.getItem(PLUS_CONTRIBUTION_PROMPT_LEDGER_STORAGE_KEY) || '{}')
+    );
+  } catch {
+    return normalizePlusContributionPromptLedger();
+  }
+}
+
+function setPlusContributionPromptLedger(ledger) {
+  localStorage.setItem(
+    PLUS_CONTRIBUTION_PROMPT_LEDGER_STORAGE_KEY,
+    JSON.stringify(normalizePlusContributionPromptLedger(ledger))
+  );
+}
+
+function isSuccessfulPlusAccountRecord(record = {}) {
+  return record?.finalStatus === 'success' && Boolean(record.plusModeEnabled);
+}
+
+function getPlusContributionPromptTotals(records = []) {
+  return (Array.isArray(records) ? records : []).reduce((totals, record) => {
+    if (!isSuccessfulPlusAccountRecord(record)) {
+      return totals;
+    }
+    if (record.contributionMode) {
+      totals.contributionSuccess += 1;
+    } else {
+      totals.plusSuccess += 1;
+    }
+    return totals;
+  }, {
+    plusSuccess: 0,
+    contributionSuccess: 0,
+  });
+}
+
+function getPlusContributionPromptProgress(records = [], ledger = getPlusContributionPromptLedger()) {
+  const totals = getPlusContributionPromptTotals(records);
+  const normalizedLedger = normalizePlusContributionPromptLedger(ledger);
+  const credit = (totals.contributionSuccess * PLUS_CONTRIBUTION_ACCOUNT_CREDIT)
+    + normalizedLedger.donationCredit;
+  const netCount = totals.plusSuccess - credit;
+  const sinceLastPrompt = netCount - normalizedLedger.promptBaseline;
+  return {
+    ...totals,
+    credit,
+    netCount,
+    sinceLastPrompt,
+    shouldPrompt: sinceLastPrompt >= PLUS_CONTRIBUTION_PROMPT_THRESHOLD,
+  };
+}
+
+function shouldShowPlusContributionPrompt(records = [], plusModeEnabled = false, ledger = getPlusContributionPromptLedger()) {
+  return Boolean(plusModeEnabled)
+    && getPlusContributionPromptProgress(records, ledger).shouldPrompt;
+}
+
+function markPlusContributionPromptShown(records = [], ledger = getPlusContributionPromptLedger()) {
+  const progress = getPlusContributionPromptProgress(records, ledger);
+  const nextLedger = {
+    ...normalizePlusContributionPromptLedger(ledger),
+    promptBaseline: progress.netCount,
+  };
+  setPlusContributionPromptLedger(nextLedger);
+  return nextLedger;
+}
+
+function addPlusContributionPromptCredit(credit, ledger = getPlusContributionPromptLedger()) {
+  const normalizedLedger = normalizePlusContributionPromptLedger(ledger);
+  const nextLedger = {
+    ...normalizedLedger,
+    donationCredit: normalizedLedger.donationCredit + Math.max(0, normalizePlusContributionPromptNumber(credit)),
+  };
+  setPlusContributionPromptLedger(nextLedger);
+  return nextLedger;
+}
+
+function getPlusContributionSupportImageUrl() {
+  if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+    return chrome.runtime.getURL('docs/images/微信.png');
+  }
+  return '../docs/images/微信.png';
+}
+
+function buildPlusContributionSupportPromptHtml() {
+  const imageUrl = getPlusContributionSupportImageUrl();
+  return [
+    '<span class="plus-contribution-prompt-copy">您觉得这个 Plus 功能怎么样？您的账户数量应该已经够个人使用啦。</span>',
+    '<span class="plus-contribution-prompt-copy">可以打开贡献给作者贡献几个账号，以便于让作者开发更好的功能出来吗？或者打赏一下作者？</span>',
+    `<img class="plus-contribution-prompt-image" src="${escapeHtml(imageUrl)}" alt="微信打赏二维码" />`,
+  ].join('');
+}
+
+function openPlusContributionSupportModal() {
+  return openActionModal({
+    title: 'Plus 功能使用反馈',
+    messageHtml: buildPlusContributionSupportPromptHtml(),
+    actions: [
+      { id: null, label: '取消', variant: 'btn-ghost' },
+      { id: 'contribute', label: '去贡献账号', variant: 'btn-outline' },
+      { id: 'donated', label: '已打赏', variant: 'btn-primary' },
+    ],
+  });
+}
+
+async function maybeShowPlusContributionPromptBeforeAutoRun(plusModeEnabled) {
+  const records = Array.isArray(latestState?.accountRunHistory) ? latestState.accountRunHistory : [];
+  if (!shouldShowPlusContributionPrompt(records, plusModeEnabled)) {
+    return true;
+  }
+
+  const choice = await openPlusContributionSupportModal();
+  const ledger = markPlusContributionPromptShown(records);
+  if (choice === 'donated') {
+    addPlusContributionPromptCredit(PLUS_CONTRIBUTION_DONATION_CREDIT, ledger);
+    showToast('感谢打赏支持，已延后下一次 Plus 提醒。', 'success', 2200);
+    return true;
+  }
+  if (choice === 'contribute') {
+    openExternalUrl(getContributionPortalUrl());
+    showToast('已打开贡献页面，可以按页面提示贡献 Plus 账号。', 'info', 2200);
+    return false;
+  }
+  return true;
 }
 
 async function openAutoSkipFailuresConfirmModal() {
@@ -4521,6 +4666,9 @@ async function startAutoRunFromCurrentSettings() {
   if (lockedRunCount > 0) {
     inputRunCount.value = String(lockedRunCount);
   }
+  const plusModeEnabled = typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
+    ? Boolean(inputPlusModeEnabled.checked)
+    : Boolean(currentPlusModeEnabled || latestState?.plusModeEnabled);
   let mode = 'restart';
   const autoRunSkipFailures = inputAutoSkipFailures.checked;
   const contributionNickname = String(inputContributionNickname?.value || '').trim();
@@ -4540,6 +4688,11 @@ async function startAutoRunFromCurrentSettings() {
     mode = choice;
   }
 
+  const confirmedPlusContributionPrompt = await maybeShowPlusContributionPromptBeforeAutoRun(plusModeEnabled);
+  if (!confirmedPlusContributionPrompt) {
+    return false;
+  }
+
   if (shouldWarnAutoRunFallbackRisk(totalRuns, autoRunSkipFailures)
     && !isAutoRunFallbackRiskPromptDismissed()) {
     const result = await openAutoRunFallbackRiskConfirmModal(totalRuns);
@@ -4551,9 +4704,6 @@ async function startAutoRunFromCurrentSettings() {
     }
   }
 
-  const plusModeEnabled = typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
-    ? Boolean(inputPlusModeEnabled.checked)
-    : Boolean(currentPlusModeEnabled || latestState?.plusModeEnabled);
   if (shouldWarnPlusAutoRunRisk(totalRuns, plusModeEnabled)
     && !isAutoRunPlusRiskPromptDismissed()) {
     const result = await openPlusAutoRunRiskConfirmModal(totalRuns);

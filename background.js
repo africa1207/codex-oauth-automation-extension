@@ -5505,6 +5505,9 @@ const STEP_COMPLETION_SIGNAL_STEP_KEYS = new Set([
   'fill-profile',
   'platform-verify',
 ]);
+const AUTO_RUN_PRE_EXECUTION_DELAYS_BY_STEP_KEY = new Map([
+  ['plus-checkout-create', 20000],
+]);
 
 function waitForStepComplete(step, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
@@ -5547,6 +5550,14 @@ function doesStepUseCompletionSignal(step, state = {}) {
     return STEP_COMPLETION_SIGNAL_STEP_KEYS.has(stepKey);
   }
   return STEP_COMPLETION_SIGNAL_STEPS.has(step);
+}
+
+function getAutoRunPreExecutionDelayMs(step, state = {}) {
+  const stepKey = getStepExecutionKeyForState(step, state);
+  if (stepKey) {
+    return AUTO_RUN_PRE_EXECUTION_DELAYS_BY_STEP_KEY.get(stepKey) || 0;
+  }
+  return 0;
 }
 
 function notifyStepComplete(step, payload) {
@@ -5914,7 +5925,17 @@ async function executeStepAndWait(step, delayAfter = 2000) {
     await sleepWithStop(delaySeconds * 1000);
   }
 
-  const executionState = await getState();
+  let executionState = await getState();
+  const preExecutionDelayMs = getAutoRunPreExecutionDelayMs(step, executionState);
+  if (preExecutionDelayMs > 0) {
+    await addLog(
+      `自动运行：步骤 ${step} 执行前固定等待 ${Math.round(preExecutionDelayMs / 1000)} 秒，确保 Plus Checkout 创建前页面稳定。`,
+      'info'
+    );
+    await sleepWithStop(preExecutionDelayMs);
+    executionState = await getState();
+  }
+
   if (doesStepUseBackgroundCompletion(step, executionState)) {
     await addLog(`自动运行：步骤 ${step} 由后台流程负责收尾，执行函数返回后将直接进入下一步。`, 'info');
     await executeStep(step);
