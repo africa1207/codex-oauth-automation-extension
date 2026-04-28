@@ -63,6 +63,7 @@ test('sidepanel html exposes phone verification toggle and dedicated HeroSMS row
   assert.match(html, /id="input-ip-proxy-enabled"/);
   assert.match(html, /id="row-hero-sms-platform"/);
   assert.match(html, /id="row-hero-sms-country"/);
+  assert.match(html, /id="row-hero-sms-max-price"/);
   assert.match(html, /id="row-hero-sms-api-key"/);
   assert.doesNotMatch(html, /id="input-account-run-history-text-enabled"/);
 });
@@ -101,6 +102,7 @@ test('updatePhoneVerificationSettingsUI toggles HeroSMS rows from the sms switch
 const inputPhoneVerificationEnabled = { checked: false };
 const rowHeroSmsPlatform = { style: { display: 'none' } };
 const rowHeroSmsCountry = { style: { display: 'none' } };
+const rowHeroSmsMaxPrice = { style: { display: 'none' } };
 const rowHeroSmsApiKey = { style: { display: 'none' } };
 
 ${extractFunction('updatePhoneVerificationSettingsUI')}
@@ -109,6 +111,7 @@ return {
   inputPhoneVerificationEnabled,
   rowHeroSmsPlatform,
   rowHeroSmsCountry,
+  rowHeroSmsMaxPrice,
   rowHeroSmsApiKey,
   updatePhoneVerificationSettingsUI,
 };
@@ -117,12 +120,14 @@ return {
   api.updatePhoneVerificationSettingsUI();
   assert.equal(api.rowHeroSmsPlatform.style.display, 'none');
   assert.equal(api.rowHeroSmsCountry.style.display, 'none');
+  assert.equal(api.rowHeroSmsMaxPrice.style.display, 'none');
   assert.equal(api.rowHeroSmsApiKey.style.display, 'none');
 
   api.inputPhoneVerificationEnabled.checked = true;
   api.updatePhoneVerificationSettingsUI();
   assert.equal(api.rowHeroSmsPlatform.style.display, '');
   assert.equal(api.rowHeroSmsCountry.style.display, '');
+  assert.equal(api.rowHeroSmsMaxPrice.style.display, '');
   assert.equal(api.rowHeroSmsApiKey.style.display, '');
 });
 
@@ -174,6 +179,7 @@ const inputAutoStepDelaySeconds = { value: '' };
 const inputPhoneVerificationEnabled = { checked: true };
 const inputVerificationResendCount = { value: '4' };
 const inputHeroSmsApiKey = { value: 'demo-key' };
+const inputHeroSmsMaxPrice = { value: '0.08' };
 const inputAccountRunHistoryHelperBaseUrl = { value: 'http://127.0.0.1:17373' };
 const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const DEFAULT_HERO_SMS_COUNTRY_ID = 52;
@@ -202,6 +208,7 @@ function normalizeAutoStepDelaySeconds(value) { return value === '' ? null : Num
 function normalizeVerificationResendCount(value, fallback) { return Number(value) || fallback; }
 ${extractFunction('normalizeHeroSmsCountryId')}
 ${extractFunction('normalizeHeroSmsCountryLabel')}
+${extractFunction('normalizeHeroSmsMaxPriceValue')}
 ${extractFunction('getSelectedHeroSmsCountryOption')}
 ${extractFunction('collectSettingsPayload')}
 return { collectSettingsPayload };
@@ -213,6 +220,7 @@ return { collectSettingsPayload };
   assert.equal(payload.accountRunHistoryTextEnabled, true);
   assert.equal(payload.accountRunHistoryHelperBaseUrl, 'http://127.0.0.1:17373');
   assert.equal(payload.heroSmsApiKey, 'demo-key');
+  assert.equal(payload.heroSmsMaxPrice, '0.08');
   assert.equal(payload.heroSmsCountryId, 52);
   assert.equal(payload.heroSmsCountryLabel, 'Thailand');
 });

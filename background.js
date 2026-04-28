@@ -481,6 +481,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   mail2925Accounts: [],
   paypalAccounts: [],
   heroSmsApiKey: '',
+  heroSmsMaxPrice: '',
   heroSmsCountryId: HERO_SMS_COUNTRY_ID,
   heroSmsCountryLabel: HERO_SMS_COUNTRY_LABEL,
 };
@@ -563,6 +564,7 @@ const DEFAULT_STATE = {
   currentLuckmailMailCursor: null,
   currentPhoneActivation: null,
   reusablePhoneActivation: null,
+  pendingPhoneActivationConfirmation: null,
   autoRunning: false, // 当前是否处于自动运行中。
   autoRunPhase: 'idle', // 当前自动运行阶段。
   autoRunCurrentRun: 0, // 自动运行当前执行到第几轮。
@@ -1325,6 +1327,8 @@ function normalizePersistentSettingValue(key, value) {
       return normalizePayPalAccounts(value);
     case 'heroSmsApiKey':
       return String(value || '');
+    case 'heroSmsMaxPrice':
+      return String(value || '').trim();
     case 'heroSmsCountryId':
       return Math.max(1, Math.floor(Number(value) || HERO_SMS_COUNTRY_ID));
     case 'heroSmsCountryLabel':
@@ -5292,6 +5296,13 @@ async function finalizeIcloudAliasAfterSuccessfulFlow(state) {
   }
 }
 
+async function finalizePhoneActivationAfterSuccessfulFlow(state) {
+  if (typeof phoneVerificationHelpers?.finalizePendingPhoneActivationConfirmation !== 'function') {
+    return null;
+  }
+  return phoneVerificationHelpers.finalizePendingPhoneActivationConfirmation(state);
+}
+
 // ============================================================
 // Tab Registry
 // ============================================================
@@ -6027,6 +6038,7 @@ function getDownstreamStateResets(step, state = {}) {
       loginVerificationRequestedAt: null,
       oauthFlowDeadlineAt: null,
       oauthFlowDeadlineSourceUrl: null,
+      pendingPhoneActivationConfirmation: null,
       lastSignupCode: null,
       lastLoginCode: null,
       localhostUrl: null,
@@ -6041,6 +6053,7 @@ function getDownstreamStateResets(step, state = {}) {
       loginVerificationRequestedAt: null,
       oauthFlowDeadlineAt: null,
       oauthFlowDeadlineSourceUrl: null,
+      pendingPhoneActivationConfirmation: null,
       lastSignupCode: null,
       lastLoginCode: null,
       localhostUrl: null,
@@ -6054,6 +6067,7 @@ function getDownstreamStateResets(step, state = {}) {
       loginVerificationRequestedAt: null,
       oauthFlowDeadlineAt: null,
       oauthFlowDeadlineSourceUrl: null,
+      pendingPhoneActivationConfirmation: null,
       lastSignupCode: null,
       lastLoginCode: null,
       localhostUrl: null,
@@ -6076,11 +6090,13 @@ function getDownstreamStateResets(step, state = {}) {
       loginVerificationRequestedAt: null,
       oauthFlowDeadlineAt: null,
       oauthFlowDeadlineSourceUrl: null,
+      pendingPhoneActivationConfirmation: null,
       localhostUrl: null,
     };
   }
   if (step === 9) {
     return {
+      pendingPhoneActivationConfirmation: null,
       plusReturnUrl: '',
       localhostUrl: null,
     };
@@ -6091,11 +6107,13 @@ function getDownstreamStateResets(step, state = {}) {
       loginVerificationRequestedAt: null,
       oauthFlowDeadlineAt: null,
       oauthFlowDeadlineSourceUrl: null,
+      pendingPhoneActivationConfirmation: null,
       localhostUrl: null,
     };
   }
   if (stepKey === 'confirm-oauth') {
     return {
+      pendingPhoneActivationConfirmation: null,
       localhostUrl: null,
     };
   }
@@ -6946,6 +6964,7 @@ async function handleStepData(step, payload) {
       if ((shouldUseCustomRegistrationEmail(latestState) || shouldClearCustomPoolEmail) && latestState.email) {
         await setEmailStateSilently(null);
       }
+      await finalizePhoneActivationAfterSuccessfulFlow(latestState);
       break;
     }
   }
@@ -8824,6 +8843,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   executeStepViaCompletionSignal,
   exportSettingsBundle,
   fetchGeneratedEmail,
+  finalizePhoneActivationAfterSuccessfulFlow,
   finalizeStep3Completion: async () => {
     const currentState = await getState();
     const signupTabId = await getTabId('signup-page');
