@@ -1172,8 +1172,6 @@ function updateIpProxyUI(state = latestState) {
   const busyAction = normalizeIpProxyActionType(actionState.action);
   const runtimeState = state || latestState || {};
 
-  setIpProxyEnabledInlineStatus(runtimeState, enabled);
-
   if (rowIpProxyEnabled) {
     rowIpProxyEnabled.style.display = '';
   }

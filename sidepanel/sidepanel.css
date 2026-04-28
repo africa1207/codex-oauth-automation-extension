@@ -785,6 +785,14 @@ header {
   display: block;
 }
 
+.ip-proxy-card {
+  margin-top: 10px;
+}
+
+.ip-proxy-header-actions {
+  flex: 0 0 auto;
+}
+
 .ip-proxy-fold {
   width: 100%;
   border: none;
@@ -858,11 +866,6 @@ header {
   }
 }
 
-.ip-proxy-enabled-inline {
-  justify-content: flex-end;
-  gap: 10px;
-}
-
 .ip-proxy-actions-inline {
   flex-wrap: wrap;
   align-items: center;
@@ -886,42 +889,6 @@ header {
   font-size: 11px;
   line-height: 1.5;
   color: var(--text-secondary);
-}
-
-.ip-proxy-enabled-status {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  min-width: 92px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-align: right;
-  white-space: nowrap;
-}
-
-.ip-proxy-enabled-status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--text-muted);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-muted) 25%, transparent);
-  flex-shrink: 0;
-}
-
-.ip-proxy-enabled-status.is-on {
-  color: var(--green);
-}
-
-.ip-proxy-enabled-status.is-on .ip-proxy-enabled-status-dot {
-  background: var(--green);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 30%, transparent);
-}
-
-.ip-proxy-enabled-status.is-off {
-  color: var(--text-muted);
 }
 
 .ip-proxy-runtime-status {

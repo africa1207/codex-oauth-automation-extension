@@ -57,10 +57,29 @@ test('sidepanel html exposes phone verification toggle and dedicated HeroSMS row
 
   assert.match(html, /id="row-phone-verification-enabled"/);
   assert.match(html, /id="input-phone-verification-enabled"/);
+  assert.match(html, /id="ip-proxy-section"/);
+  assert.match(html, /id="row-ip-proxy-enabled"/);
+  assert.match(html, /id="input-ip-proxy-enabled"/);
   assert.match(html, /id="row-hero-sms-platform"/);
   assert.match(html, /id="row-hero-sms-country"/);
   assert.match(html, /id="row-hero-sms-api-key"/);
   assert.doesNotMatch(html, /id="input-account-run-history-text-enabled"/);
+});
+
+test('sidepanel renders IP proxy as a standalone card after sms verification without proxy status chrome', () => {
+  const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
+  const phoneToggleIndex = html.indexOf('id="row-phone-verification-enabled"');
+  const ipProxySectionIndex = html.indexOf('id="ip-proxy-section"');
+  const ipProxyToggleIndex = html.indexOf('id="row-ip-proxy-enabled"');
+  const cloudflareSectionIndex = html.indexOf('id="cloudflare-temp-email-section"');
+
+  assert.match(html, /id="ip-proxy-section" class="data-card ip-proxy-card"/);
+  assert.ok(phoneToggleIndex >= 0);
+  assert.ok(ipProxySectionIndex > phoneToggleIndex);
+  assert.ok(ipProxyToggleIndex > phoneToggleIndex);
+  assert.ok(cloudflareSectionIndex > ipProxySectionIndex);
+  assert.doesNotMatch(html, /id="ip-proxy-enabled-status"/);
+  assert.doesNotMatch(html, /id="row-ip-proxy-runtime-status"/);
 });
 
 test('updatePhoneVerificationSettingsUI toggles HeroSMS rows from the sms switch', () => {
