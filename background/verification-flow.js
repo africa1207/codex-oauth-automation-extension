@@ -917,7 +917,7 @@
           getLegacyVerificationResendCountDefault(step, { requestFreshCodeFirst })
         )
         : getConfiguredVerificationResendCount(step, state, { requestFreshCodeFirst });
-      const maxSubmitAttempts = 15;
+      const maxSubmitAttempts = mail.provider === LUCKMAIL_PROVIDER ? 3 : 15;
       const resendIntervalMs = Math.max(0, Number(options.resendIntervalMs) || 0);
       let lastResendAt = Number(options.lastResendAt) || 0;
 
@@ -1000,6 +1000,12 @@
 
             if (attempt >= maxSubmitAttempts) {
               throw new Error(`步骤 ${step}：验证码连续失败，已达到 ${maxSubmitAttempts} 次重试上限。`);
+            }
+
+            if (mail.provider === LUCKMAIL_PROVIDER) {
+              await addLog(`步骤 ${step}：LuckMail 验证码提交失败，等待 15 秒后重新轮询 /code 接口（${attempt + 1}/${maxSubmitAttempts}）...`, 'warn');
+              await sleepWithStop(15000);
+              continue;
             }
 
             const remainingBeforeResendMs = resendIntervalMs > 0 && lastResendAt > 0

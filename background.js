@@ -3509,21 +3509,16 @@ async function resolveLuckmailVerificationMail(client, token, filters = {}, toke
   return match || null;
 }
 
-async function pollLuckmailVerificationCode(step, state, pollPayload = {}) {
+async function legacyPollLuckmailVerificationCode(step, state, pollPayload = {}) {
   const purchase = getCurrentLuckmailPurchase(state);
   if (!purchase?.token) {
     throw new Error('LuckMail 当前没有可用 token，请先执行步骤 3 购买邮箱。');
   }
 
   const client = createLuckmailClient(state);
-  const maxAttempts = Math.max(1, Number(pollPayload.maxAttempts) || 5);
-  const intervalMs = Math.max(1000, Number(pollPayload.intervalMs) || 3000);
-  const filters = {
-    afterTimestamp: pollPayload.filterAfterTimestamp || 0,
-    senderFilters: pollPayload.senderFilters || [],
-    subjectFilters: pollPayload.subjectFilters || [],
-    excludeCodes: pollPayload.excludeCodes || [],
-  };
+  const maxAttempts = Math.max(1, Number(pollPayload.maxAttempts) || 3);
+  const intervalMs = Math.max(15000, Number(pollPayload.intervalMs) || 15000);
+  const excludedCodes = new Set((pollPayload.excludeCodes || []).filter(Boolean));
 
   const initialCursor = normalizeLuckmailMailCursor((await getState()).currentLuckmailMailCursor);
   if (!initialCursor.messageId && !initialCursor.receivedAt) {
@@ -3585,6 +3580,80 @@ async function pollLuckmailVerificationCode(step, state, pollPayload = {}) {
   }
 
   throw lastError || new Error(`步骤 ${step}：未在 LuckMail 邮箱中找到新的匹配验证码。`);
+}
+
+async function pollLuckmailVerificationCode(step, state, pollPayload = {}) {
+  const purchase = getCurrentLuckmailPurchase(state);
+  if (!purchase?.token) {
+    throw new Error('LuckMail 当前没有可用 token，请先执行步骤 3 购买邮箱。');
+  }
+
+  const client = createLuckmailClient(state);
+  const maxAttempts = Math.max(1, Number(pollPayload.maxAttempts) || 3);
+  const intervalMs = Math.max(15000, Number(pollPayload.intervalMs) || 15000);
+  const excludedCodes = new Set((pollPayload.excludeCodes || []).filter(Boolean));
+
+  const initialCursor = normalizeLuckmailMailCursor((await getState()).currentLuckmailMailCursor);
+  if (!initialCursor.messageId && !initialCursor.receivedAt) {
+    const mailList = await client.user.getTokenMails(purchase.token);
+    const baselineCursor = buildLuckmailBaselineCursor(mailList?.mails || []);
+    await setLuckmailMailCursorState(baselineCursor);
+    if (baselineCursor?.messageId || baselineCursor?.receivedAt) {
+      await addLog(`步骤 ${step}：LuckMail 已保存当前邮箱旧邮件快照，后续仅使用新收到的验证码。`, 'info');
+    }
+  }
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    throwIfStopped();
+    await addLog(`步骤 ${step}：正在通过 LuckMail /code 接口轮询验证码（${attempt}/${maxAttempts}）...`, 'info');
+
+    try {
+      const tokenCode = await client.user.getTokenCode(purchase.token);
+      const remoteEmail = String(tokenCode?.email_address || '').trim().toLowerCase();
+      const expectedEmail = String(purchase.email_address || state?.email || '').trim().toLowerCase();
+      if (remoteEmail && expectedEmail && remoteEmail !== expectedEmail) {
+        throw new Error(`步骤 ${step}：LuckMail token 对应邮箱与当前邮箱不一致。当前邮箱：${expectedEmail}；token 邮箱：${remoteEmail}`);
+      }
+
+      const tokenMail = tokenCode.verification_code && tokenCode.mail && !tokenCode.mail.verification_code
+        ? {
+          ...tokenCode.mail,
+          verification_code: tokenCode.verification_code,
+        }
+        : tokenCode.mail;
+      const code = String(tokenCode?.verification_code || tokenMail?.verification_code || '').trim();
+      const cursor = normalizeLuckmailMailCursor((await getState()).currentLuckmailMailCursor);
+
+      if (!code || !tokenMail) {
+        lastError = new Error(`步骤 ${step}：LuckMail /code 接口暂未返回新的验证码。`);
+      } else if (excludedCodes.has(code)) {
+        lastError = new Error(`步骤 ${step}：LuckMail 返回的验证码 ${code} 已试过，等待 15 秒后再次轮询。`);
+      } else if (!isLuckmailMailNewerThanCursor(tokenMail, cursor)) {
+        lastError = new Error(`步骤 ${step}：LuckMail /code 返回的最新邮件仍是旧验证码。`);
+      } else {
+        await setLuckmailMailCursorState(buildLuckmailMailCursor(tokenMail));
+        return {
+          ok: true,
+          code,
+          emailTimestamp: normalizeLuckmailTimestamp(tokenMail.received_at) || Date.now(),
+          mailId: tokenMail.message_id,
+        };
+      }
+    } catch (err) {
+      if (isStopError(err)) {
+        throw err;
+      }
+      lastError = err;
+      await addLog(`步骤 ${step}：LuckMail /code 轮询失败：${err.message}`, 'warn');
+    }
+
+    if (attempt < maxAttempts) {
+      await sleepWithStop(intervalMs);
+    }
+  }
+
+  throw lastError || new Error(`步骤 ${step}：未在 LuckMail /code 接口中获取到新的验证码。`);
 }
 
 function summarizeCloudflareTempEmailMessagesForLog(messages) {
