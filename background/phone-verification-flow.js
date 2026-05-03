@@ -3,7 +3,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundPhoneVerificationModule() {
   function createPhoneVerificationHelpers(deps = {}) {
     const {
-      addLog,
+      addLog: rawAddLog = async () => {},
       ensureStep8SignupPageReady,
       fetchImpl = (...args) => fetch(...args),
       getOAuthFlowStepTimeoutMs,
@@ -87,6 +87,35 @@
     const PHONE_SMS_FAILURE_SKIP_THRESHOLD = 2;
     const MAX_ACTIVATION_PRICE_HINTS = 256;
     const activationPriceHintsByKey = new Map();
+    let activePhoneVerificationLogStep = null;
+
+    function normalizeLogStep(value) {
+      const step = Math.floor(Number(value) || 0);
+      return step > 0 ? step : null;
+    }
+
+    function normalizePhoneVerificationLogMessage(message) {
+      return String(message || '')
+        .replace(/^Step\s+9\s+diagnostics\s*:\s*/i, 'diagnostics: ')
+        .replace(/^Step\s+9\s*[:：]\s*/i, '')
+        .replace(/^步骤\s*9\s*[:：]\s*/, '')
+        .replace(/\bstep\s+9\b/gi, 'current step')
+        .trim();
+    }
+
+    async function addLog(message, level = 'info', options = {}) {
+      const normalizedOptions = options && typeof options === 'object' ? { ...options } : {};
+      const step = normalizeLogStep(normalizedOptions.step || normalizedOptions.visibleStep)
+        || normalizeLogStep(activePhoneVerificationLogStep);
+      if (step) {
+        normalizedOptions.step = step;
+        if (!normalizedOptions.stepKey) {
+          normalizedOptions.stepKey = 'phone-verification';
+        }
+      }
+      delete normalizedOptions.visibleStep;
+      return rawAddLog(normalizePhoneVerificationLogMessage(message), level, normalizedOptions);
+    }
 
     function normalizeUrl(value, fallback = DEFAULT_HERO_SMS_BASE_URL) {
       const trimmed = String(value || '').trim();
@@ -3176,19 +3205,24 @@
     }
 
     async function readPhonePageState(tabId, timeoutMs = 10000) {
+      const visibleStep = normalizeLogStep(activePhoneVerificationLogStep) || 9;
       await ensureStep8SignupPageReady(tabId, {
         timeoutMs,
-        logMessage: 'Step 9: waiting for auth page content script to recover before phone verification.',
+        visibleStep,
+        logStepKey: 'phone-verification',
+        logMessage: 'waiting for auth page content script to recover before phone verification.',
       });
       const result = await sendToContentScriptResilient('signup-page', {
         type: 'STEP8_GET_STATE',
         source: 'background',
-        payload: {},
+        payload: { visibleStep },
       }, {
         timeoutMs,
         responseTimeoutMs: timeoutMs,
         retryDelayMs: 600,
-        logMessage: 'Step 9: auth page is switching, waiting to inspect phone verification state again...',
+        logMessage: 'auth page is switching, waiting to inspect phone verification state again...',
+        logStep: visibleStep,
+        logStepKey: 'phone-verification',
       });
 
       if (result?.error) {
@@ -3270,8 +3304,9 @@
     async function submitPhoneNumber(tabId, phoneNumber, activation = null) {
       const state = await getState();
       const countryConfig = resolveCountryConfigFromActivation(activation, state);
+      const visibleStep = normalizeLogStep(activePhoneVerificationLogStep) || 9;
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
-        ? await getOAuthFlowStepTimeoutMs(30000, { step: 9, actionLabel: 'submit add-phone number' })
+        ? await getOAuthFlowStepTimeoutMs(30000, { step: visibleStep, actionLabel: 'submit add-phone number' })
         : 30000;
       const result = await sendToContentScriptResilient('signup-page', {
         type: 'SUBMIT_PHONE_NUMBER',
@@ -3285,7 +3320,9 @@
         timeoutMs,
         responseTimeoutMs: timeoutMs,
         retryDelayMs: 600,
-        logMessage: 'Step 9: waiting for add-phone page to become ready...',
+        logMessage: 'waiting for add-phone page to become ready...',
+        logStep: visibleStep,
+        logStepKey: 'phone-verification',
       });
 
       if (result?.error) {
@@ -3295,8 +3332,9 @@
     }
 
     async function submitPhoneVerificationCode(tabId, code) {
+      const visibleStep = normalizeLogStep(activePhoneVerificationLogStep) || 9;
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
-        ? await getOAuthFlowStepTimeoutMs(45000, { step: 9, actionLabel: 'submit phone verification code' })
+        ? await getOAuthFlowStepTimeoutMs(45000, { step: visibleStep, actionLabel: 'submit phone verification code' })
         : 45000;
       const result = await sendToContentScriptResilient('signup-page', {
         type: 'SUBMIT_PHONE_VERIFICATION_CODE',
@@ -3306,7 +3344,9 @@
         timeoutMs,
         responseTimeoutMs: timeoutMs,
         retryDelayMs: 600,
-        logMessage: 'Step 9: waiting for phone verification page before filling the SMS code...',
+        logMessage: 'waiting for phone verification page before filling the SMS code...',
+        logStep: visibleStep,
+        logStepKey: 'phone-verification',
       });
 
       if (result?.error) {
@@ -3316,8 +3356,9 @@
     }
 
     async function resendPhoneVerificationCode(tabId) {
+      const visibleStep = normalizeLogStep(activePhoneVerificationLogStep) || 9;
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
-        ? await getOAuthFlowStepTimeoutMs(65000, { step: 9, actionLabel: 'resend phone verification code' })
+        ? await getOAuthFlowStepTimeoutMs(65000, { step: visibleStep, actionLabel: 'resend phone verification code' })
         : 65000;
       const request = {
         type: 'RESEND_PHONE_VERIFICATION_CODE',
@@ -3332,7 +3373,9 @@
           timeoutMs,
           responseTimeoutMs: timeoutMs,
           retryDelayMs: 600,
-          logMessage: 'Step 9: waiting for the phone verification resend button...',
+          logMessage: 'waiting for the phone verification resend button...',
+          logStep: visibleStep,
+          logStepKey: 'phone-verification',
         });
 
       if (result?.error) {
@@ -3342,8 +3385,9 @@
     }
 
     async function returnToAddPhone(tabId) {
+      const visibleStep = normalizeLogStep(activePhoneVerificationLogStep) || 9;
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
-        ? await getOAuthFlowStepTimeoutMs(30000, { step: 9, actionLabel: 'return to add-phone page' })
+        ? await getOAuthFlowStepTimeoutMs(30000, { step: visibleStep, actionLabel: 'return to add-phone page' })
         : 30000;
       const result = await sendToContentScriptResilient('signup-page', {
         type: 'RETURN_TO_ADD_PHONE',
@@ -3353,7 +3397,9 @@
         timeoutMs,
         responseTimeoutMs: timeoutMs,
         retryDelayMs: 600,
-        logMessage: 'Step 9: returning to add-phone page to replace the phone number...',
+        logMessage: 'returning to add-phone page to replace the phone number...',
+        logStep: visibleStep,
+        logStepKey: 'phone-verification',
       });
 
       if (result?.error) {
@@ -3846,7 +3892,8 @@
       throw new Error('Phone verification did not complete successfully.');
     }
 
-    async function completePhoneVerificationFlow(tabId, initialPageState = null) {
+    async function completePhoneVerificationFlow(tabId, initialPageState = null, options = {}) {
+      activePhoneVerificationLogStep = normalizeLogStep(options.visibleStep || options.step) || 9;
       let state = await getState();
       let activation = normalizeActivation(state[PHONE_ACTIVATION_STATE_KEY]);
       let pageState = initialPageState || await readPhonePageState(tabId);

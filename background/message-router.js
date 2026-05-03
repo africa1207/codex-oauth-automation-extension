@@ -253,7 +253,10 @@
             const currentStatus = latestState.stepStatuses?.[loginCodeStep];
             if (!isStepProtectedFromAutoSkip(currentStatus)) {
               await setStepStatus(loginCodeStep, 'skipped');
-              await addLog(`步骤 ${step}：认证页已直接进入 OAuth 授权页，已自动跳过步骤 ${loginCodeStep} 的登录验证码。`, 'warn');
+              await addLog(`认证页已直接进入 OAuth 授权页，已自动跳过步骤 ${loginCodeStep} 的登录验证码。`, 'warn', {
+                step,
+                stepKey: 'oauth-login',
+              });
             }
           }
         } else if (payload.loginVerificationRequestedAt) {
@@ -357,8 +360,16 @@
         }
 
         case 'LOG': {
-          const { message: msg, level } = message.payload;
-          await addLog(`[${getSourceLabel(message.source)}] ${msg}`, level);
+          const { message: msg, level, step: payloadStep, stepKey } = message.payload;
+          const logStep = Math.floor(Number(message.step || payloadStep) || 0);
+          await addLog(
+            `[${getSourceLabel(message.source)}] ${msg}`,
+            level,
+            {
+              step: logStep > 0 ? logStep : null,
+              stepKey,
+            }
+          );
           return { ok: true };
         }
 
@@ -383,7 +394,7 @@
             }
             const errorMessage = error?.message || String(error || '步骤 3 提交后确认失败');
             await setStepStatus(message.step, 'failed');
-            await addLog(`步骤 ${message.step} 失败：${errorMessage}`, 'error');
+            await addLog(`失败：${errorMessage}`, 'error', { step: message.step });
             await appendManualAccountRunRecordIfNeeded(`step${message.step}_failed`, null, errorMessage);
             notifyStepError(message.step, errorMessage);
             return { ok: true, error: errorMessage };
@@ -395,7 +406,7 @@
             : 10;
           const completionState = message.step === lastStepId ? completionStateCandidate : null;
           await setStepStatus(message.step, 'completed');
-          await addLog(`步骤 ${message.step} 已完成`, 'ok');
+          await addLog('已完成', 'ok', { step: message.step });
           await handleStepData(message.step, message.payload);
           if (message.step === lastStepId && typeof appendAccountRunRecord === 'function') {
             await appendAccountRunRecord('success', completionState);
@@ -414,12 +425,12 @@
           }
           if (isStopError(message.error)) {
             await setStepStatus(message.step, 'stopped');
-            await addLog(`步骤 ${message.step} 已被用户停止`, 'warn');
+            await addLog('已被用户停止', 'warn', { step: message.step });
             await appendManualAccountRunRecordIfNeeded(`step${message.step}_stopped`, null, message.error);
             notifyStepError(message.step, message.error);
           } else {
             await setStepStatus(message.step, 'failed');
-            await addLog(`步骤 ${message.step} 失败：${message.error}`, 'error');
+            await addLog(`失败：${message.error}`, 'error', { step: message.step });
             await appendManualAccountRunRecordIfNeeded(`step${message.step}_failed`, null, message.error);
             notifyStepError(message.step, message.error);
           }

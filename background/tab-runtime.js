@@ -339,6 +339,8 @@
         timeoutMs = 30000,
         retryDelayMs = 700,
         logMessage = '',
+        logStep = null,
+        logStepKey = '',
       } = options;
 
       const start = Date.now();
@@ -399,7 +401,10 @@
 
         if (logMessage && !logged) {
           console.warn(LOG_PREFIX, `[ensureContentScriptReadyOnTab] ${source} tab=${tabId} still not ready after ${Date.now() - start}ms`);
-          await addLog(logMessage, 'warn');
+          await addLog(logMessage, 'warn', {
+            step: logStep,
+            stepKey: logStepKey,
+          });
           logged = true;
         }
 
@@ -645,6 +650,8 @@
         timeoutMs = 30000,
         retryDelayMs = 600,
         logMessage = '',
+        logStep = null,
+        logStepKey = '',
         responseTimeoutMs,
       } = options;
       const start = Date.now();
@@ -676,7 +683,10 @@
 
           lastError = err;
           if (logMessage && !logged) {
-            await addLog(logMessage, 'warn');
+            await addLog(logMessage, 'warn', {
+              step: logStep,
+              stepKey: logStepKey,
+            });
             logged = true;
           }
 
@@ -691,6 +701,8 @@
       const {
         timeoutMs = 45000,
         maxRecoveryAttempts = 2,
+        logStep = null,
+        logStepKey = '',
         responseTimeoutMs,
       } = options;
       const start = Date.now();
@@ -720,7 +732,10 @@
 
           lastError = err;
           if (!logged) {
-            await addLog(`步骤 ${message.step}：${mail.label} 页面通信异常，正在尝试让邮箱页重新就绪...`, 'warn');
+            await addLog(`${mail.label} 页面通信异常，正在尝试让邮箱页重新就绪...`, 'warn', {
+              step: logStep,
+              stepKey: logStepKey,
+            });
             logged = true;
           }
 
