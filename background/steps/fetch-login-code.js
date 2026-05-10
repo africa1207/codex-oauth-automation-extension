@@ -25,6 +25,7 @@
       isTabAlive,
       isVerificationMailPollingError,
       LUCKMAIL_PROVIDER,
+      OUTLOOK_EMAIL_PLUS_PROVIDER = 'outlook-email-plus',
       resolveSignupEmailForFlow,
       resolveVerificationStep,
       rerunStep7ForStep8Recovery,
@@ -359,6 +360,9 @@
       if (mail?.provider === LUCKMAIL_PROVIDER) {
         return 15000;
       }
+      if (mail?.provider === OUTLOOK_EMAIL_PLUS_PROVIDER) {
+        return Math.max(0, Number(STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS) || 0);
+      }
       if (mail?.provider === HOTMAIL_PROVIDER || mail?.provider === '2925') {
         return 0;
       }
@@ -484,6 +488,7 @@
       if (
         mail.provider === HOTMAIL_PROVIDER
         || mail.provider === LUCKMAIL_PROVIDER
+        || mail.provider === OUTLOOK_EMAIL_PLUS_PROVIDER
         || mail.provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER
         || mail.provider === CLOUD_MAIL_PROVIDER
       ) {
@@ -529,9 +534,11 @@
         targetEmail: fixedTargetEmail,
         resendIntervalMs: mail.provider === LUCKMAIL_PROVIDER
           ? 15000
-          : ((mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
-            ? 0
-            : STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS),
+          : (mail.provider === OUTLOOK_EMAIL_PLUS_PROVIDER
+            ? Math.max(0, Number(STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS) || 0)
+            : ((mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
+              ? 0
+              : STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS)),
       });
       return {
         lastResendAt: latestResendAt,

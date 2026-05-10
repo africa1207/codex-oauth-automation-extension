@@ -24,10 +24,12 @@
       LUCKMAIL_PROVIDER,
       MAIL_2925_VERIFICATION_INTERVAL_MS,
       MAIL_2925_VERIFICATION_MAX_ATTEMPTS,
+      OUTLOOK_EMAIL_PLUS_PROVIDER = 'outlook-email-plus',
       pollCloudflareTempEmailVerificationCode,
       pollCloudMailVerificationCode,
       pollHotmailVerificationCode,
       pollLuckmailVerificationCode,
+      pollOutlookEmailPlusVerificationCode,
       sendToContentScript,
       sendToContentScriptResilient,
       sendToMailContentScriptResilient,
@@ -949,6 +951,13 @@
           ...timedPoll.payload,
           onResendRequestedAt,
         });
+      }
+      if (mail.provider === OUTLOOK_EMAIL_PLUS_PROVIDER) {
+        const timedPoll = await applyMailPollingTimeBudget(step, {
+          ...getVerificationPollPayload(step, state),
+          ...cleanPollOverrides,
+        }, cleanPollOverrides, `轮询${getVerificationCodeLabel(step)}验证码邮箱`);
+        return pollOutlookEmailPlusVerificationCode(step, state, timedPoll.payload);
       }
       if (mail.provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER) {
         const timedPoll = await applyMailPollingTimeBudget(step, {

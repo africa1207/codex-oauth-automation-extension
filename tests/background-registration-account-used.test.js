@@ -69,6 +69,9 @@ function isHotmailProvider(state) {
 function isLuckmailProvider() {
   return false;
 }
+function isOutlookEmailPlusProvider() {
+  return false;
+}
 function getCurrentLuckmailPurchase() {
   return null;
 }
@@ -77,6 +80,7 @@ async function patchHotmailAccount(id, updates) {
 }
 async function setLuckmailPurchaseUsedState() {}
 async function clearLuckmailRuntimeState() {}
+async function completeOutlookEmailPlusClaim() {}
 async function patchMail2925Account() {}
 async function finalizeIcloudAliasAfterSuccessfulFlow() {
   return { handled: false };
@@ -103,4 +107,73 @@ return { markCurrentRegistrationAccountUsed, patchCalls, logs };
   assert.equal(api.patchCalls[0].id, 'hot-1');
   assert.equal(api.patchCalls[0].updates.used, true);
   assert.equal(api.logs.some((entry) => /Hotmail 账号已标记为已用/.test(entry.message)), true);
+});
+
+test('markCurrentRegistrationAccountUsed completes current OutlookEmailPlus claim on success', async () => {
+  const bundle = extractFunction('markCurrentRegistrationAccountUsed');
+  const factory = new Function(`
+let completeCall = null;
+async function getState() {
+  return {
+    mailProvider: 'outlook-email-plus',
+    email: 'fresh@outlook.com',
+    currentOutlookEmailPlusClaim: {
+      accountId: 88,
+      email: 'fresh@outlook.com',
+      claimToken: 'claim-token',
+      callerId: 'caller-1',
+      taskId: 'task-1',
+    },
+  };
+}
+function isHotmailProvider() {
+  return false;
+}
+function isLuckmailProvider() {
+  return false;
+}
+function isOutlookEmailPlusProvider(state) {
+  return state.mailProvider === 'outlook-email-plus';
+}
+function getCurrentLuckmailPurchase() {
+  return null;
+}
+async function patchHotmailAccount() {}
+async function setLuckmailPurchaseUsedState() {}
+async function clearLuckmailRuntimeState() {}
+async function completeOutlookEmailPlusClaim(state, options) {
+  completeCall = { state, options };
+  return { completed: true };
+}
+async function patchMail2925Account() {}
+async function finalizeIcloudAliasAfterSuccessfulFlow() {
+  return { handled: false };
+}
+async function markCurrentCustomEmailPoolEntryUsed() {
+  return { updated: false };
+}
+async function addLog() {}
+
+${bundle}
+
+return {
+  markCurrentRegistrationAccountUsed,
+  snapshot() {
+    return { completeCall };
+  },
+};
+`);
+  const api = factory();
+
+  const result = await api.markCurrentRegistrationAccountUsed({}, { level: 'ok' });
+  const snapshot = api.snapshot();
+
+  assert.equal(result.updated, true);
+  assert.equal(snapshot.completeCall.state.currentOutlookEmailPlusClaim.accountId, 88);
+  assert.deepEqual(snapshot.completeCall.options, {
+    result: 'success',
+    detail: 'registration_success',
+    clearEmail: true,
+    level: 'ok',
+  });
 });

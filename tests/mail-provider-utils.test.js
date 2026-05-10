@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   HOTMAIL_PROVIDER,
+  OUTLOOK_EMAIL_PLUS_PROVIDER,
   getIcloudForwardMailConfig,
   getIcloudForwardMailProviderOptions,
   getMailProviderConfig,
@@ -34,6 +35,17 @@ test('getMailProviderConfig preserves the hotmail provider sentinel', () => {
     {
       provider: HOTMAIL_PROVIDER,
       label: 'Hotmail（微软 Graph）',
+    }
+  );
+});
+
+test('getMailProviderConfig preserves the OutlookEmailPlus provider sentinel', () => {
+  assert.equal(normalizeMailProvider(OUTLOOK_EMAIL_PLUS_PROVIDER), OUTLOOK_EMAIL_PLUS_PROVIDER);
+  assert.deepEqual(
+    getMailProviderConfig({ mailProvider: OUTLOOK_EMAIL_PLUS_PROVIDER }),
+    {
+      provider: OUTLOOK_EMAIL_PLUS_PROVIDER,
+      label: 'OutlookEmailPlus',
     }
   );
 });

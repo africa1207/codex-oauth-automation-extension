@@ -65,7 +65,7 @@ const snapshot = {
   state: 'password_page',
   passwordInput: { value: '', hidden: false },
   submitButton: { textContent: 'Continue', hidden: false },
-  displayedEmail: 'user@example.com',
+  displayedEmail: 'User@Outlook.com',
 };
 
 const window = {
@@ -159,6 +159,7 @@ function getOperationDelayRunner() {
   return window.CodexOperationDelay.performOperationWithDelay;
 }
 
+${extractFunction('normalizeSignupEmailInputValue')}
 ${extractFunction('step3_fillEmailPassword')}
 
 return {
@@ -190,7 +191,7 @@ return {
 
   let settled = false;
   const tracked = api.run({
-    email: 'user@example.com',
+    email: 'User@Outlook.com',
     password: 'Secret123!',
   }).then((value) => {
     settled = true;
@@ -209,7 +210,7 @@ return {
   assert.equal(beforeSubmit.completions.length, 1);
   assert.equal(beforeSubmit.completions[0].step, 3);
   assert.deepStrictEqual(result, beforeSubmit.completions[0].payload);
-  assert.equal(result.email, 'user@example.com');
+  assert.equal(result.email, 'User@Outlook.com');
   assert.equal(result.deferredSubmit, true);
   assert.equal(typeof result.signupVerificationRequestedAt, 'number');
   assert.equal(beforeSubmit.events.includes('report:true'), true);

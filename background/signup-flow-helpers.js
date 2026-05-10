@@ -10,12 +10,14 @@
       ensureHotmailAccountForFlow,
       ensureMail2925AccountForFlow,
       ensureLuckmailPurchaseForFlow,
+      claimOutlookEmailPlusMailbox,
       fetchGeneratedEmail,
       isGeneratedAliasProvider,
       isReusableGeneratedAliasEmail,
       isHotmailProvider,
       isRetryableContentScriptTransportError = () => false,
       isLuckmailProvider,
+      isOutlookEmailPlusProvider = () => false,
       isSignupEmailVerificationPageUrl,
       isSignupPasswordPageUrl,
       isSignupPhoneVerificationPageUrl = null,
@@ -337,6 +339,12 @@
       } else if (isLuckmailProvider(state)) {
         const purchase = await ensureLuckmailPurchaseForFlow({ allowReuse: true });
         resolvedEmail = purchase.email_address;
+      } else if (isOutlookEmailPlusProvider(state)) {
+        if (typeof claimOutlookEmailPlusMailbox !== 'function') {
+          throw new Error('OutlookEmailPlus 邮箱池能力尚未初始化。');
+        }
+        const claim = await claimOutlookEmailPlusMailbox(state, { generateNew: false });
+        resolvedEmail = claim.email;
       } else if (isGeneratedAliasProvider(state)) {
         if (Boolean(state?.mail2925UseAccountPool)
           && String(state?.mailProvider || '').trim().toLowerCase() === '2925'

@@ -1157,6 +1157,11 @@ async function ensureSignupPasswordPageReady(timeout = 20000) {
   throw new Error('等待进入密码页超时。URL: ' + location.href);
 }
 
+function normalizeSignupEmailInputValue(value = '') {
+  // OutlookEmailPlus 的外部查询按邮箱大小写精确匹配，页面输入必须保留邮箱原始大小写。
+  return String(value || '').trim();
+}
+
 async function fillSignupEmailAndContinue(email, step) {
   const performOperationWithDelay = typeof getOperationDelayRunner === 'function'
     ? getOperationDelayRunner()
@@ -1165,8 +1170,8 @@ async function fillSignupEmailAndContinue(email, step) {
         const gate = rootScope?.CodexOperationDelay?.performOperationWithDelay;
         return typeof gate === 'function' ? gate(metadata, operation) : operation();
       };
-  if (!email) throw new Error(`未提供邮箱地址，步骤 ${step} 无法继续。`);
-  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const targetEmail = normalizeSignupEmailInputValue(email);
+  if (!targetEmail) throw new Error(`未提供邮箱地址，步骤 ${step} 无法继续。`);
 
   const snapshot = await waitForSignupEntryState({
     timeout: 20000,
@@ -1176,8 +1181,8 @@ async function fillSignupEmailAndContinue(email, step) {
   });
 
   if (snapshot.state === 'password_page') {
-    if (snapshot.displayedEmail && snapshot.displayedEmail !== normalizedEmail) {
-      throw new Error(`步骤 ${step}：当前密码页邮箱为 ${snapshot.displayedEmail}，与目标邮箱 ${email} 不一致，请先回到步骤 1 重新开始。`);
+    if (snapshot.displayedEmail && normalizeSignupEmailInputValue(snapshot.displayedEmail) !== targetEmail) {
+      throw new Error(`步骤 ${step}：当前密码页邮箱为 ${snapshot.displayedEmail}，与目标邮箱 ${targetEmail} 不一致，请先回到步骤 1 重新开始。`);
     }
     log(`步骤 ${step}：当前已在密码页，无需重复提交邮箱。`);
     return {
@@ -1193,10 +1198,10 @@ async function fillSignupEmailAndContinue(email, step) {
     throw new Error(`步骤 ${step}：未找到可用的邮箱输入入口。URL: ${location.href}`);
   }
 
-  log(`步骤 ${step}：正在填写邮箱：${email}`);
+  log(`步骤 ${step}：正在填写邮箱：${targetEmail}`);
   await humanPause(500, 1400);
   await performOperationWithDelay({ stepKey: step === 2 ? 'signup-entry' : 'fill-password', kind: 'fill', label: 'signup-email' }, async () => {
-    fillInput(snapshot.emailInput, email);
+    fillInput(snapshot.emailInput, targetEmail);
   });
   log(`步骤 ${step}：邮箱已填写`);
 
@@ -1221,7 +1226,7 @@ async function fillSignupEmailAndContinue(email, step) {
 
   return {
     submitted: true,
-    email,
+    email: targetEmail,
     url: location.href,
   };
 }
@@ -2520,7 +2525,7 @@ async function step3_fillEmailPassword(payload) {
       };
   const { email, password } = payload;
   if (!password) throw new Error('未提供密码，步骤 3 需要可用密码。');
-  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const targetEmail = normalizeSignupEmailInputValue(email);
   const accountIdentifierType = String(payload?.accountIdentifierType || '').trim().toLowerCase() === 'phone'
     ? 'phone'
     : 'email';
@@ -2538,7 +2543,7 @@ async function step3_fillEmailPassword(payload) {
     || snapshot.state === 'logged_in_home'
   ) {
     const completionPayload = {
-      email: email || '',
+      email: targetEmail,
       phoneNumber: String(payload?.phoneNumber || '').trim(),
       accountIdentifierType,
       accountIdentifier,
@@ -2576,8 +2581,8 @@ async function step3_fillEmailPassword(payload) {
   if (snapshot.state !== 'password_page' || !snapshot.passwordInput) {
     throw new Error('在密码页未找到密码输入框。URL: ' + location.href);
   }
-  if (normalizedEmail && snapshot.displayedEmail && snapshot.displayedEmail !== normalizedEmail) {
-    throw new Error(`当前密码页邮箱为 ${snapshot.displayedEmail}，与目标邮箱 ${email} 不一致，请先回到步骤 1 重新开始。`);
+  if (targetEmail && snapshot.displayedEmail && normalizeSignupEmailInputValue(snapshot.displayedEmail) !== targetEmail) {
+    throw new Error(`当前密码页邮箱为 ${snapshot.displayedEmail}，与目标邮箱 ${targetEmail} 不一致，请先回到步骤 1 重新开始。`);
   }
 
   await humanPause(600, 1500);
@@ -6070,7 +6075,7 @@ async function submitAddEmailAndContinue(payload = {}) {
         const gate = rootScope?.CodexOperationDelay?.performOperationWithDelay;
         return typeof gate === 'function' ? gate(metadata, operation) : operation();
       };
-  const email = String(payload.email || '').trim().toLowerCase();
+  const email = normalizeSignupEmailInputValue(payload.email);
   if (!email) {
     throw new Error('未提供邮箱地址，无法添加邮箱。');
   }

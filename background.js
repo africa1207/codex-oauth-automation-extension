@@ -47,9 +47,11 @@ importScripts(
   'hotmail-utils.js',
   'microsoft-email.js',
   'luckmail-utils.js',
+  'outlook-email-plus-utils.js',
   'cloudflare-temp-email-utils.js',
   'cloudmail-utils.js',
   'background/cloudmail-provider.js',
+  'background/outlook-email-plus-provider.js',
   'icloud-utils.js',
   'mail-provider-utils.js',
   'content/activation-utils.js'
@@ -159,6 +161,21 @@ const {
   normalizeTimestamp: normalizeLuckmailTimestamp,
   pickLuckmailVerificationMail,
 } = self.LuckMailUtils;
+const {
+  DEFAULT_OUTLOOK_EMAIL_PLUS_CALLER_ID,
+  DEFAULT_OUTLOOK_EMAIL_PLUS_POOL_PROVIDER,
+  OUTLOOK_EMAIL_PLUS_PROVIDER,
+  getOutlookEmailPlusResponseError,
+  getOutlookEmailPlusVerificationCode,
+  isOutlookEmailPlusSuccessResponse,
+  joinOutlookEmailPlusUrl,
+  normalizeOutlookEmailPlusBaseUrl,
+  normalizeOutlookEmailPlusCallerId,
+  normalizeOutlookEmailPlusClaim,
+  normalizeOutlookEmailPlusCurrentClaim,
+  normalizeOutlookEmailPlusEmail,
+  normalizeOutlookEmailPlusPoolProvider,
+} = self.OutlookEmailPlusUtils;
 const {
   DEFAULT_MAIL_PAGE_SIZE: CLOUDFLARE_TEMP_EMAIL_DEFAULT_PAGE_SIZE,
   buildCloudflareTempEmailHeaders,
@@ -724,6 +741,10 @@ const PERSISTED_SETTING_DEFAULTS = {
   luckmailUsedPurchases: {},
   luckmailPreserveTagId: 0,
   luckmailPreserveTagName: DEFAULT_LUCKMAIL_PRESERVE_TAG_NAME,
+  outlookEmailPlusBaseUrl: '',
+  outlookEmailPlusApiKey: '',
+  outlookEmailPlusCallerId: DEFAULT_OUTLOOK_EMAIL_PLUS_CALLER_ID,
+  outlookEmailPlusPoolProvider: DEFAULT_OUTLOOK_EMAIL_PLUS_POOL_PROVIDER,
   cloudflareDomain: '',
   cloudflareDomains: [],
   cloudflareTempEmailBaseUrl: '',
@@ -863,6 +884,7 @@ const DEFAULT_STATE = {
   luckmailPreserveTagName: DEFAULT_LUCKMAIL_PRESERVE_TAG_NAME,
   currentLuckmailPurchase: null,
   currentLuckmailMailCursor: null,
+  currentOutlookEmailPlusClaim: null,
   currentPhoneActivation: null,
   phoneNumber: '',
   currentPhoneVerificationCode: '',
@@ -1907,6 +1929,16 @@ async function markCurrentRegistrationAccountUsed(state = {}, options = {}) {
     }
   }
 
+  if (isOutlookEmailPlusProvider(latestState)) {
+    const result = await completeOutlookEmailPlusClaim(latestState, {
+      result: 'success',
+      detail: 'registration_success',
+      clearEmail: true,
+      level: options.level || 'ok',
+    });
+    updated = Boolean(result?.completed) || updated;
+  }
+
   if (String(latestState.mailProvider || '').trim().toLowerCase() === '2925' && latestState.currentMail2925AccountId) {
     await patchMail2925Account(latestState.currentMail2925AccountId, {
       lastUsedAt: Date.now(),
@@ -1928,6 +1960,24 @@ async function markCurrentRegistrationAccountUsed(state = {}, options = {}) {
   }
 
   return { updated };
+}
+
+async function releaseCurrentRegistrationAccountOnFailure(state = {}, reason = 'flow_failed', options = {}) {
+  const providedState = state && typeof state === 'object' ? state : {};
+  const currentState = await getState();
+  const latestState = {
+    ...providedState,
+    ...(currentState && typeof currentState === 'object' ? currentState : {}),
+  };
+  if (!isOutlookEmailPlusProvider(latestState)) {
+    return { released: false };
+  }
+
+  return safeReleaseOutlookEmailPlusClaim(latestState, {
+    reason: String(reason || 'flow_failed').trim() || 'flow_failed',
+    clearEmail: options.clearEmail !== false,
+    level: options.level || 'warn',
+  });
 }
 
 function getCustomEmailPoolEmailForRun(state = {}, targetRun = 1) {
@@ -1965,6 +2015,7 @@ function normalizeMailProvider(value = '') {
     case GMAIL_PROVIDER:
     case HOTMAIL_PROVIDER:
     case LUCKMAIL_PROVIDER:
+    case OUTLOOK_EMAIL_PLUS_PROVIDER:
     case CLOUDFLARE_TEMP_EMAIL_PROVIDER:
     case CLOUD_MAIL_PROVIDER:
     case '163':
@@ -2189,6 +2240,36 @@ const {
   pollCloudMailVerificationCode,
   resolveCloudMailPollTargetEmail,
 } = cloudMailProvider;
+
+const outlookEmailPlusProvider = self.MultiPageBackgroundOutlookEmailPlusProvider.createOutlookEmailPlusProvider({
+  addLog,
+  broadcastDataUpdate,
+  getOutlookEmailPlusResponseError,
+  getOutlookEmailPlusVerificationCode,
+  getState,
+  isOutlookEmailPlusSuccessResponse,
+  joinOutlookEmailPlusUrl,
+  normalizeOutlookEmailPlusBaseUrl,
+  normalizeOutlookEmailPlusCallerId,
+  normalizeOutlookEmailPlusClaim,
+  normalizeOutlookEmailPlusCurrentClaim,
+  normalizeOutlookEmailPlusEmail,
+  normalizeOutlookEmailPlusPoolProvider,
+  OUTLOOK_EMAIL_PLUS_PROVIDER,
+  setEmailState,
+  setState,
+  sleepWithStop,
+  throwIfStopped,
+});
+const {
+  claimOutlookEmailPlusMailbox,
+  clearOutlookEmailPlusRuntimeState,
+  completeOutlookEmailPlusClaim,
+  getOutlookEmailPlusConfig,
+  isOutlookEmailPlusProvider,
+  pollOutlookEmailPlusVerificationCode,
+  safeReleaseOutlookEmailPlusClaim,
+} = outlookEmailPlusProvider;
 
 function normalizeSub2ApiGroupNames(value = '') {
   const source = Array.isArray(value)
@@ -2521,6 +2602,14 @@ function normalizePersistentSettingValue(key, value) {
       return Number(value) || 0;
     case 'luckmailPreserveTagName':
       return String(value || '').trim() || DEFAULT_LUCKMAIL_PRESERVE_TAG_NAME;
+    case 'outlookEmailPlusBaseUrl':
+      return normalizeOutlookEmailPlusBaseUrl(value);
+    case 'outlookEmailPlusApiKey':
+      return String(value || '').trim();
+    case 'outlookEmailPlusCallerId':
+      return normalizeOutlookEmailPlusCallerId(value);
+    case 'outlookEmailPlusPoolProvider':
+      return normalizeOutlookEmailPlusPoolProvider(value);
     case 'cloudflareDomain':
       return normalizeCloudflareDomain(value);
     case 'cloudflareDomains':
@@ -3341,6 +3430,7 @@ async function resetState() {
     luckmailPreserveTagName: String(prev.luckmailPreserveTagName || '').trim() || DEFAULT_LUCKMAIL_PRESERVE_TAG_NAME,
     currentLuckmailPurchase: null,
     currentLuckmailMailCursor: null,
+    currentOutlookEmailPlusClaim: null,
     // Keep reusable phone activation across round resets so the same number can be reactivated up to maxUses.
     reusablePhoneActivation,
     // Keep free reuse phone activation until the user clears or the flow retires it.
@@ -7430,6 +7520,7 @@ function getSourceLabel(source) {
     'duck-mail': 'Duck 邮箱',
     'hotmail-api': 'Hotmail（API对接/本地助手）',
     'luckmail-api': 'LuckMail（API 购邮）',
+    'outlook-email-plus': 'OutlookEmailPlus',
     'cloudflare-temp-email': 'Cloudflare Temp Email',
     'cloudmail': 'Cloud Mail',
     'plus-checkout': 'Plus Checkout',
@@ -9707,6 +9798,18 @@ async function appendAndBroadcastAccountRunRecord(status, stateOverride = null, 
   const state = stateOverride || await getState();
   const resolvedStatus = resolveAccountRunRecordStatusForStop(status, state);
   const resolvedReason = resolveAccountRunRecordReasonForStop(resolvedStatus, reason);
+  if (/^success$/i.test(String(resolvedStatus || '').trim()) && isOutlookEmailPlusProvider(state)) {
+    await markCurrentRegistrationAccountUsed(state, {
+      logPrefix: 'OutlookEmailPlus',
+      level: 'ok',
+    });
+  }
+  if (/^(?:failed|stopped|step\d+_(?:failed|stopped))$/i.test(String(resolvedStatus || '').trim())) {
+    await releaseCurrentRegistrationAccountOnFailure(state, resolvedReason, {
+      clearEmail: true,
+      level: 'warn',
+    });
+  }
   const record = await accountRunHistoryHelpers.appendAccountRunRecord(resolvedStatus, state, resolvedReason);
   if (!record) {
     return null;
@@ -10082,7 +10185,17 @@ const autoRunController = self.MultiPageBackgroundAutoRunController?.createAutoR
   onAutoRunRoundSuccess: (payload = {}) => maybeSwitchIpProxyAfterAutoRunRoundSuccess(payload),
   persistAutoRunTimerPlan,
   resetState,
-  runAutoSequenceFromStep: (...args) => runAutoSequenceFromStep(...args),
+  runAutoSequenceFromStep: async (...args) => {
+    try {
+      return await runAutoSequenceFromStep(...args);
+    } catch (error) {
+      await releaseCurrentRegistrationAccountOnFailure(await getState(), getErrorMessage(error), {
+        clearEmail: true,
+        level: 'warn',
+      });
+      throw error;
+    }
+  },
   runtime: {
     get: () => ({
       autoRunActive,
@@ -10178,6 +10291,15 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
     const purchase = await ensureLuckmailPurchaseForFlow({ allowReuse: true });
     await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮：LuckMail 邮箱已就绪：${purchase.email_address}（第 ${attemptRuns} 次尝试）===`, 'ok');
     return purchase.email_address;
+  }
+
+  if (isOutlookEmailPlusProvider(currentState)) {
+    const claim = await claimOutlookEmailPlusMailbox(currentState, {
+      targetRun,
+      attemptRun: attemptRuns,
+    });
+    await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮：OutlookEmailPlus 邮箱已就绪：${claim.email}（第 ${attemptRuns} 次尝试）===`, 'ok');
+    return claim.email;
   }
 
   if (isGeneratedAliasProvider(currentState)) {
@@ -10309,6 +10431,15 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
     const purchase = await ensureLuckmailPurchaseForFlow({ allowReuse: true });
     await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮：LuckMail 邮箱已就绪：${purchase.email_address}（第 ${attemptRuns} 次尝试）===`, 'ok');
     return purchase.email_address;
+  }
+
+  if (isOutlookEmailPlusProvider(currentState)) {
+    const claim = await claimOutlookEmailPlusMailbox(currentState, {
+      targetRun,
+      attemptRun: attemptRuns,
+    });
+    await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮：OutlookEmailPlus 邮箱已就绪：${claim.email}（第 ${attemptRuns} 次尝试）===`, 'ok');
+    return claim.email;
   }
 
   if (isGeneratedAliasProvider(currentState)) {
@@ -10819,6 +10950,7 @@ const signupFlowHelpers = self.MultiPageSignupFlowHelpers?.createSignupFlowHelpe
   ensureHotmailAccountForFlow,
   ensureMail2925AccountForFlow,
   ensureLuckmailPurchaseForFlow,
+  claimOutlookEmailPlusMailbox,
   fetchGeneratedEmail,
   getTabId,
   isGeneratedAliasProvider,
@@ -10834,6 +10966,7 @@ const signupFlowHelpers = self.MultiPageSignupFlowHelpers?.createSignupFlowHelpe
   },
   isRetryableContentScriptTransportError,
   isHotmailProvider,
+  isOutlookEmailPlusProvider,
   isLuckmailProvider,
   isSignupPasswordPageUrl,
   isTabAlive,
@@ -10869,10 +11002,12 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
   LUCKMAIL_PROVIDER,
   MAIL_2925_VERIFICATION_INTERVAL_MS,
   MAIL_2925_VERIFICATION_MAX_ATTEMPTS,
+  OUTLOOK_EMAIL_PLUS_PROVIDER,
   pollCloudflareTempEmailVerificationCode,
   pollCloudMailVerificationCode,
   pollHotmailVerificationCode,
   pollLuckmailVerificationCode,
+  pollOutlookEmailPlusVerificationCode,
   sendToContentScript,
   sendToContentScriptResilient,
   sendToMailContentScriptResilient,
@@ -11000,6 +11135,7 @@ const step4Executor = self.MultiPageBackgroundStep4?.createStep4Executor({
   LUCKMAIL_PROVIDER,
   CLOUDFLARE_TEMP_EMAIL_PROVIDER,
   CLOUD_MAIL_PROVIDER,
+  OUTLOOK_EMAIL_PLUS_PROVIDER,
   resolveVerificationStep: verificationFlowHelpers.resolveVerificationStep,
   reuseOrCreateTab,
   sendToContentScript,
@@ -11065,6 +11201,7 @@ const step8Executor = self.MultiPageBackgroundStep8?.createStep8Executor({
   isTabAlive,
   isVerificationMailPollingError,
   LUCKMAIL_PROVIDER,
+  OUTLOOK_EMAIL_PLUS_PROVIDER,
   resolveVerificationStep: verificationFlowHelpers.resolveVerificationStep,
   resolveSignupEmailForFlow,
   phoneVerificationHelpers,
@@ -11463,6 +11600,9 @@ function getMailConfig(state) {
   }
   if (provider === LUCKMAIL_PROVIDER) {
     return { provider: LUCKMAIL_PROVIDER, label: 'LuckMail（API 购邮）' };
+  }
+  if (provider === OUTLOOK_EMAIL_PLUS_PROVIDER) {
+    return { provider: OUTLOOK_EMAIL_PLUS_PROVIDER, label: 'OutlookEmailPlus' };
   }
   if (provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER) {
     return { provider: CLOUDFLARE_TEMP_EMAIL_PROVIDER, label: 'Cloudflare Temp Email' };
