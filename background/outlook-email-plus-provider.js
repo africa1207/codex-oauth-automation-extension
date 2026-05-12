@@ -17,6 +17,7 @@
       normalizeOutlookEmailPlusCurrentClaim,
       normalizeOutlookEmailPlusEmail,
       normalizeOutlookEmailPlusPoolProvider,
+      normalizeOutlookEmailPlusProjectKey,
       OUTLOOK_EMAIL_PLUS_PROVIDER = 'outlook-email-plus',
       setEmailState = async () => {},
       setState = async () => {},
@@ -29,6 +30,7 @@
         baseUrl: normalizeOutlookEmailPlusBaseUrl(state.outlookEmailPlusBaseUrl),
         apiKey: String(state.outlookEmailPlusApiKey || '').trim(),
         callerId: normalizeOutlookEmailPlusCallerId(state.outlookEmailPlusCallerId),
+        projectKey: normalizeOutlookEmailPlusProjectKey(state.outlookEmailPlusProjectKey),
         poolProvider: normalizeOutlookEmailPlusPoolProvider(state.outlookEmailPlusPoolProvider),
         currentClaim: normalizeOutlookEmailPlusCurrentClaim(state.currentOutlookEmailPlusClaim),
       };
@@ -232,6 +234,7 @@
       }
 
       const callerId = normalizeOutlookEmailPlusCallerId(options.callerId || config.callerId);
+      const projectKey = normalizeOutlookEmailPlusProjectKey(options.projectKey || config.projectKey);
       const taskId = buildOutlookEmailPlusTaskId(latestState, options);
       const poolProvider = normalizeOutlookEmailPlusPoolProvider(options.poolProvider || config.poolProvider);
       const payload = {
@@ -239,6 +242,9 @@
         task_id: taskId,
         provider: poolProvider,
       };
+      if (projectKey) {
+        payload.project_key = projectKey;
+      }
       const response = await requestOutlookEmailPlusJson(config, '/api/external/pool/claim-random', {
         method: 'POST',
         payload,

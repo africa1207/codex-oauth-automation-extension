@@ -9,6 +9,7 @@ const {
   normalizeOutlookEmailPlusClaim,
   normalizeOutlookEmailPlusEmail,
   normalizeOutlookEmailPlusPoolProvider,
+  normalizeOutlookEmailPlusProjectKey,
 } = require('../outlook-email-plus-utils.js');
 
 test('normalizeOutlookEmailPlusBaseUrl accepts root URL and strips known API endpoint paths', () => {
@@ -60,6 +61,7 @@ test('normalizeOutlookEmailPlusEmail preserves provider email casing', () => {
 test('OutlookEmailPlus helpers default unsupported pool provider and extract code from response content', () => {
   assert.equal(normalizeOutlookEmailPlusPoolProvider('bad-provider'), DEFAULT_OUTLOOK_EMAIL_PLUS_POOL_PROVIDER);
   assert.equal(DEFAULT_OUTLOOK_EMAIL_PLUS_CALLER_ID, 'codex-oauth-extension');
+  assert.equal(normalizeOutlookEmailPlusProjectKey('  project-A  '), 'project-A');
   assert.equal(getOutlookEmailPlusVerificationCode({ data: { content: 'Your OpenAI code is 654321.' } }), '654321');
   assert.equal(getOutlookEmailPlusVerificationCode({ verification_code: '123456' }), '123456');
 });

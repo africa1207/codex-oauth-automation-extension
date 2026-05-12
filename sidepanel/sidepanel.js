@@ -276,6 +276,7 @@ const outlookEmailPlusSection = document.getElementById('outlook-email-plus-sect
 const inputOutlookEmailPlusBaseUrl = document.getElementById('input-outlook-email-plus-base-url');
 const inputOutlookEmailPlusApiKey = document.getElementById('input-outlook-email-plus-api-key');
 const inputOutlookEmailPlusCallerId = document.getElementById('input-outlook-email-plus-caller-id');
+const inputOutlookEmailPlusProjectKey = document.getElementById('input-outlook-email-plus-project-key');
 const selectOutlookEmailPlusPoolProvider = document.getElementById('select-outlook-email-plus-pool-provider');
 const hotmailSection = document.getElementById('hotmail-section');
 const mail2925Section = document.getElementById('mail2925-section');
@@ -2962,6 +2963,13 @@ function normalizeOutlookEmailPlusCallerIdInput(value = '') {
   return String(value || '').trim() || DEFAULT_OUTLOOK_EMAIL_PLUS_CALLER_ID;
 }
 
+function normalizeOutlookEmailPlusProjectKeyInput(value = '') {
+  if (typeof window.OutlookEmailPlusUtils?.normalizeOutlookEmailPlusProjectKey === 'function') {
+    return window.OutlookEmailPlusUtils.normalizeOutlookEmailPlusProjectKey(value);
+  }
+  return String(value || '').trim();
+}
+
 function normalizeOutlookEmailPlusPoolProviderInput(value = '') {
   if (typeof window.OutlookEmailPlusUtils?.normalizeOutlookEmailPlusPoolProvider === 'function') {
     return window.OutlookEmailPlusUtils.normalizeOutlookEmailPlusPoolProvider(value);
@@ -2981,6 +2989,9 @@ function applyOutlookEmailPlusSettingsState(state = {}) {
   }
   if (inputOutlookEmailPlusCallerId) {
     inputOutlookEmailPlusCallerId.value = normalizeOutlookEmailPlusCallerIdInput(state?.outlookEmailPlusCallerId);
+  }
+  if (inputOutlookEmailPlusProjectKey) {
+    inputOutlookEmailPlusProjectKey.value = normalizeOutlookEmailPlusProjectKeyInput(state?.outlookEmailPlusProjectKey);
   }
   if (selectOutlookEmailPlusPoolProvider) {
     selectOutlookEmailPlusPoolProvider.value = normalizeOutlookEmailPlusPoolProviderInput(state?.outlookEmailPlusPoolProvider);
@@ -3662,6 +3673,7 @@ function collectSettingsPayload() {
     outlookEmailPlusBaseUrl: normalizeOutlookEmailPlusBaseUrlInput(inputOutlookEmailPlusBaseUrl?.value),
     outlookEmailPlusApiKey: inputOutlookEmailPlusApiKey?.value || '',
     outlookEmailPlusCallerId: normalizeOutlookEmailPlusCallerIdInput(inputOutlookEmailPlusCallerId?.value),
+    outlookEmailPlusProjectKey: normalizeOutlookEmailPlusProjectKeyInput(inputOutlookEmailPlusProjectKey?.value),
     outlookEmailPlusPoolProvider: normalizeOutlookEmailPlusPoolProviderInput(selectOutlookEmailPlusPoolProvider?.value),
     cloudflareDomain: selectedCloudflareDomain,
     cloudflareDomains: domains,
@@ -13946,6 +13958,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         message.payload.outlookEmailPlusBaseUrl !== undefined
         || message.payload.outlookEmailPlusApiKey !== undefined
         || message.payload.outlookEmailPlusCallerId !== undefined
+        || message.payload.outlookEmailPlusProjectKey !== undefined
         || message.payload.outlookEmailPlusPoolProvider !== undefined
       ) {
         applyOutlookEmailPlusSettingsState(latestState);

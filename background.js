@@ -816,6 +816,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   outlookEmailPlusBaseUrl: '',
   outlookEmailPlusApiKey: '',
   outlookEmailPlusCallerId: DEFAULT_OUTLOOK_EMAIL_PLUS_CALLER_ID,
+  outlookEmailPlusProjectKey: '',
   outlookEmailPlusPoolProvider: DEFAULT_OUTLOOK_EMAIL_PLUS_POOL_PROVIDER,
   cloudflareDomain: '',
   cloudflareDomains: [],
@@ -2685,6 +2686,8 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '').trim();
     case 'outlookEmailPlusCallerId':
       return normalizeOutlookEmailPlusCallerId(value);
+    case 'outlookEmailPlusProjectKey':
+      return normalizeOutlookEmailPlusProjectKey(value);
     case 'outlookEmailPlusPoolProvider':
       return normalizeOutlookEmailPlusPoolProvider(value);
     case 'cloudflareDomain':

@@ -10,6 +10,7 @@ function createProviderApi(options = {}) {
     outlookEmailPlusBaseUrl: 'https://api.example.com',
     outlookEmailPlusApiKey: 'sk-test',
     outlookEmailPlusCallerId: 'caller-1',
+    outlookEmailPlusProjectKey: '',
     outlookEmailPlusPoolProvider: 'imap',
     currentOutlookEmailPlusClaim: null,
     email: null,
@@ -95,6 +96,30 @@ test('claimOutlookEmailPlusMailbox claims a mailbox with API key and stores runt
     provider: 'imap',
   });
   assert.deepEqual(snapshot.broadcasts[0].currentOutlookEmailPlusClaim.email, 'User@Outlook.com');
+});
+
+test('claimOutlookEmailPlusMailbox includes project_key when configured', async () => {
+  const api = createProviderApi({
+    state: {
+      outlookEmailPlusProjectKey: 'project-A',
+    },
+    responseByPath: {
+      '/api/external/pool/claim-random': {
+        success: true,
+        data: {
+          account_id: 21,
+          email: 'Project@Outlook.com',
+          email_domain: 'outlook.com',
+          claim_token: 'claim-token-2',
+        },
+      },
+    },
+  });
+
+  await api.claimOutlookEmailPlusMailbox(null, { taskId: 'task-2' });
+  const snapshot = api.snapshot();
+
+  assert.equal(snapshot.calls[0].body.project_key, 'project-A');
 });
 
 test('completeOutlookEmailPlusClaim calls claim-complete and clears runtime email', async () => {

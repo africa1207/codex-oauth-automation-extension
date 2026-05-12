@@ -58,6 +58,10 @@
     return String(value || '').trim() || DEFAULT_OUTLOOK_EMAIL_PLUS_CALLER_ID;
   }
 
+  function normalizeOutlookEmailPlusProjectKey(value = '') {
+    return String(value || '').trim();
+  }
+
   function normalizeOutlookEmailPlusEmail(value = '') {
     const normalized = String(value || '').trim();
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : '';
@@ -209,5 +213,6 @@
     normalizeOutlookEmailPlusCurrentClaim,
     normalizeOutlookEmailPlusEmail,
     normalizeOutlookEmailPlusPoolProvider,
+    normalizeOutlookEmailPlusProjectKey,
   };
 });
