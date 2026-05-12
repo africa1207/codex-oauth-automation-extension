@@ -22,6 +22,7 @@
       isSignupPasswordPageUrl,
       isSignupPhoneVerificationPageUrl = null,
       isSignupProfilePageUrl = null,
+      persistRegistrationEmailState = null,
       reuseOrCreateTab,
       sendToContentScriptResilient,
       setEmailState,
@@ -35,6 +36,23 @@
     async function waitForSignupEntryTabToSettle(tabId, step = 1) {
       if (step !== 2 || !Number.isInteger(tabId) || typeof waitForTabStableComplete !== 'function') {
         return null;
+      }
+
+      if (typeof chrome?.tabs?.get === 'function' && typeof chrome?.windows?.update === 'function') {
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          const windowId = Number(tab?.windowId);
+          if (Number.isInteger(windowId) && windowId >= 0) {
+            await chrome.windows.update(windowId, { state: 'normal', focused: true }).catch(() => {});
+            await chrome.windows.update(windowId, {
+              focused: true,
+              width: 1200,
+              height: 900,
+            }).catch(() => {});
+          }
+        } catch {
+          // Best-effort only. Step 2 still has content-side entry retries.
+        }
       }
 
       if (typeof addLog === 'function') {
@@ -110,7 +128,7 @@
     function fallbackSignupProfilePageUrl(rawUrl) {
       const parsed = parseUrlSafely(rawUrl);
       if (!parsed) return false;
-      return /\/(?:create-account\/profile|u\/signup\/profile|signup\/profile)(?:[/?#]|$)/i.test(parsed.pathname || '');
+      return /\/(?:create-account\/profile|u\/signup\/profile|signup\/profile|about-you)(?:[/?#]|$)/i.test(parsed.pathname || '');
     }
 
     function resolveSignupPostIdentityState(rawUrl) {
@@ -313,12 +331,22 @@
       if (resolvedEmail === state.email && !options?.preserveAccountIdentity) {
         return;
       }
+      const generatedEmailAlreadyPersisted = Boolean(options?.generatedEmailAlreadyPersisted);
+      if (typeof persistRegistrationEmailState === 'function') {
+        if (!generatedEmailAlreadyPersisted) {
+          await persistRegistrationEmailState(state, resolvedEmail, {
+            source: 'flow',
+            preserveAccountIdentity: Boolean(options?.preserveAccountIdentity),
+          });
+        }
+        return;
+      }
       const preservedPhoneIdentity = getPreservedPhoneIdentityForEmailResolution(state, options);
       if (preservedPhoneIdentity && typeof setState === 'function') {
-        await setState({
-          email: resolvedEmail,
-          ...preservedPhoneIdentity,
-        });
+        if (!generatedEmailAlreadyPersisted && resolvedEmail !== state.email) {
+          await setEmailState(resolvedEmail, { source: 'flow' });
+        }
+        await setState(preservedPhoneIdentity);
         return;
       }
       if (resolvedEmail !== state.email) {
@@ -368,7 +396,10 @@
       }
 
       if (!generatedEmailAlreadyPersisted || options?.preserveAccountIdentity) {
-        await persistResolvedSignupEmail(resolvedEmail, state, options);
+        await persistResolvedSignupEmail(resolvedEmail, state, {
+          ...options,
+          generatedEmailAlreadyPersisted,
+        });
       }
 
       return resolvedEmail;

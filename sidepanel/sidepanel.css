@@ -841,73 +841,6 @@ header {
   padding-top: 0;
 }
 
-.ip-proxy-promo-row {
-  min-height: 26px;
-}
-
-.ip-proxy-promo {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  height: 26px;
-  padding: 0 9px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--amber) 22%, var(--border));
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--amber-soft) 44%, var(--bg-base));
-  color: color-mix(in srgb, var(--amber) 82%, var(--text-secondary));
-}
-
-.ip-proxy-promo-track {
-  min-width: 100%;
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1;
-  letter-spacing: 0;
-}
-
-.ip-proxy-promo-item {
-  display: inline-block;
-  padding-right: 32px;
-}
-
-.ip-proxy-promo-copy {
-  display: none;
-}
-
-.ip-proxy-promo.is-overflowing .ip-proxy-promo-track {
-  min-width: auto;
-  animation: ip-proxy-promo-marquee 18s linear infinite;
-  will-change: transform;
-}
-
-.ip-proxy-promo.is-overflowing .ip-proxy-promo-copy {
-  display: inline-block;
-}
-
-.ip-proxy-promo:hover .ip-proxy-promo-track {
-  animation-play-state: paused;
-}
-
-@keyframes ip-proxy-promo-marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ip-proxy-promo.is-overflowing .ip-proxy-promo-track {
-    animation: none;
-  }
-
-  .ip-proxy-promo.is-overflowing .ip-proxy-promo-copy {
-    display: none;
-  }
-}
 
 .phone-verification-card {
   margin-top: 10px;
@@ -2985,6 +2918,12 @@ header {
   border-color: color-mix(in srgb, var(--green) 16%, var(--border));
 }
 
+.account-records-stat.is-running {
+  color: var(--blue);
+  background: var(--blue-soft);
+  border-color: color-mix(in srgb, var(--blue) 16%, var(--border));
+}
+
 .account-records-stat.is-failed {
   color: var(--red);
   background: var(--red-soft);
@@ -3158,8 +3097,11 @@ header {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  white-space: normal;
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.4;
@@ -3184,6 +3126,15 @@ header {
 .account-record-item.is-success .account-record-item-status {
   background: var(--green-soft);
   color: var(--green);
+}
+
+.account-record-item.is-running {
+  border-color: color-mix(in srgb, var(--blue) 14%, var(--border-subtle));
+}
+
+.account-record-item.is-running .account-record-item-status {
+  background: var(--blue-soft);
+  color: var(--blue);
 }
 
 .account-record-item.is-failed {

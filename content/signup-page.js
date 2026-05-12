@@ -27,8 +27,10 @@ if (document.documentElement.getAttribute(SIGNUP_PAGE_LISTENER_SENTINEL) !== '1'
       || message.type === 'STEP8_TRIGGER_CONTINUE'
       || message.type === 'GET_LOGIN_AUTH_STATE'
       || message.type === 'SUBMIT_ADD_EMAIL'
+      || message.type === 'GET_STEP5_SUBMIT_STATE'
       || message.type === 'PREPARE_SIGNUP_VERIFICATION'
       || message.type === 'RECOVER_AUTH_RETRY_PAGE'
+      || message.type === 'RECOVER_STEP5_SUBMIT_RETRY_PAGE'
       || message.type === 'RESEND_VERIFICATION_CODE'
       || message.type === 'SUBMIT_PHONE_NUMBER'
       || message.type === 'SUBMIT_PHONE_VERIFICATION_CODE'
@@ -88,10 +90,14 @@ async function handleCommand(message) {
       return serializeLoginAuthState(inspectLoginAuthState());
     case 'SUBMIT_ADD_EMAIL':
       return await submitAddEmailAndContinue(message.payload);
+    case 'GET_STEP5_SUBMIT_STATE':
+      return getStep5SubmitState();
     case 'PREPARE_SIGNUP_VERIFICATION':
       return await prepareSignupVerificationFlow(message.payload);
     case 'RECOVER_AUTH_RETRY_PAGE':
       return await recoverCurrentAuthRetryPage(message.payload);
+    case 'RECOVER_STEP5_SUBMIT_RETRY_PAGE':
+      return await recoverStep5SubmitRetryPage(message.payload);
     case 'RESEND_VERIFICATION_CODE':
       return await resendVerificationCode(message.step);
     case 'SUBMIT_PHONE_NUMBER':
@@ -602,12 +608,38 @@ function getSignupEmailContinueButton({ allowDisabled = false } = {}) {
   }) || null;
 }
 
-function findSignupEntryTrigger() {
+function findSignupEntryTrigger(options = {}) {
+  const { allowHiddenFallback = true } = options || {};
   const candidates = document.querySelectorAll('a, button, [role="button"], [role="link"]');
-  return Array.from(candidates).find((el) => {
-    if (!isVisibleElement(el) || !isActionEnabled(el)) return false;
-    return SIGNUP_ENTRY_TRIGGER_PATTERN.test(getActionText(el));
-  }) || null;
+  let hiddenSignupTrigger = null;
+
+  for (const el of Array.from(candidates)) {
+    if (!isActionEnabled(el)) continue;
+    if (!SIGNUP_ENTRY_TRIGGER_PATTERN.test(getActionText(el))) continue;
+    if (isVisibleElement(el)) {
+      return el;
+    }
+    if (!hiddenSignupTrigger) {
+      hiddenSignupTrigger = el;
+    }
+  }
+
+  if (!allowHiddenFallback || !hiddenSignupTrigger) {
+    return null;
+  }
+
+  const view = typeof window !== 'undefined' ? window : globalThis;
+  const collapsedViewport = Boolean(
+    Math.round(Number(view?.innerWidth) || 0) < 240
+    || Math.round(Number(view?.innerHeight) || 0) < 160
+    || Math.round(Number(view?.outerWidth) || 0) < 320
+    || Math.round(Number(view?.outerHeight) || 0) < 180
+  );
+  const pageText = typeof getPageTextSnapshot === 'function'
+    ? getPageTextSnapshot()
+    : '';
+  const looksLikeLoggedOutHome = /登录|登入|log\s*in|sign\s*in/i.test(pageText);
+  return collapsedViewport || looksLikeLoggedOutHome ? hiddenSignupTrigger : null;
 }
 
 function getSignupPasswordDisplayedEmail() {
@@ -719,6 +751,7 @@ function getSignupEntryStateSummary(snapshot = inspectSignupEntryState()) {
     summary.signupTrigger = {
       tag: (snapshot.signupTrigger.tagName || '').toLowerCase(),
       text: getActionText(snapshot.signupTrigger).slice(0, 80),
+      visible: isVisibleElement(snapshot.signupTrigger),
     };
   }
 
@@ -1085,9 +1118,13 @@ async function waitForSignupEntryState(options = {}) {
           : `步骤 ${step}：已找到官网注册入口，等待 3 秒后点击...`);
         await sleep(3000);
         throwIfStopped();
+        const clickTarget = findSignupEntryTrigger({ allowHiddenFallback: false }) || snapshot.signupTrigger;
+        if (!isVisibleElement(clickTarget)) {
+          log(`步骤 ${step}：注册入口仍处于不可见状态，继续按入口重试节奏尝试恢复点击...`, 'warn');
+        }
         await humanPause(350, 900);
         await performOperationWithDelay({ stepKey: 'signup-entry', kind: 'click', label: 'open-signup-entry' }, async () => {
-          simulateClick(snapshot.signupTrigger);
+          simulateClick(clickTarget);
         });
       }
     }
@@ -2385,9 +2422,13 @@ async function waitForSignupPhoneEntryState(options = {}) {
           : `步骤 ${step}：已找到官网注册入口，等待 3 秒后点击...`);
         await sleep(3000);
         throwIfStopped();
+        const clickTarget = findSignupEntryTrigger({ allowHiddenFallback: false }) || snapshot.signupTrigger;
+        if (!isVisibleElement(clickTarget)) {
+          log(`步骤 ${step}：注册入口仍处于不可见状态，继续按入口重试节奏尝试恢复点击...`, 'warn');
+        }
         await humanPause(350, 900);
         await performOperationWithDelay({ stepKey: 'signup-phone-entry', kind: 'click', label: 'open-signup-entry' }, async () => {
-          simulateClick(snapshot.signupTrigger);
+          simulateClick(clickTarget);
         });
       }
       await sleep(250);
@@ -2790,7 +2831,7 @@ function isSignupProfilePageUrl(rawUrl = location.href) {
     if (!['auth.openai.com', 'auth0.openai.com', 'accounts.openai.com'].includes(host)) {
       return false;
     }
-    return /\/(?:create-account\/profile|u\/signup\/profile|signup\/profile)(?:[/?#]|$)/i.test(String(parsed.pathname || ''));
+    return /\/(?:create-account\/profile|u\/signup\/profile|signup\/profile|about-you)(?:[/?#]|$)/i.test(String(parsed.pathname || ''));
   } catch {
     return false;
   }
@@ -6392,6 +6433,7 @@ function getStep5ProfilePathPatterns() {
     /\/create-account\/profile(?:[/?#]|$)/i,
     /\/u\/signup\/profile(?:[/?#]|$)/i,
     /\/signup\/profile(?:[/?#]|$)/i,
+    /\/about-you(?:[/?#]|$)/i,
   ];
 }
 
@@ -6505,6 +6547,15 @@ function getStep5PostSubmitSuccessState() {
   }
 
   if (!isStep5ProfileStillVisible()) {
+    try {
+      const parsed = new URL(String(location.href || '').trim());
+      const host = String(parsed.hostname || '').toLowerCase();
+      if (['auth.openai.com', 'auth0.openai.com', 'accounts.openai.com'].includes(host)) {
+        return null;
+      }
+    } catch {
+      // Fall through to the generic "left_profile" success state.
+    }
     return {
       state: 'left_profile',
       url: location.href,
@@ -6512,6 +6563,49 @@ function getStep5PostSubmitSuccessState() {
   }
 
   return null;
+}
+
+function getStep5SubmitState() {
+  const retryState = getStep5AuthRetryPageState();
+  const successState = getStep5PostSubmitSuccessState();
+  const errorText = typeof getStep5ErrorText === 'function' ? getStep5ErrorText() : '';
+  let signupAuthHost = false;
+  try {
+    const parsed = new URL(String(location.href || '').trim());
+    signupAuthHost = ['auth.openai.com', 'auth0.openai.com', 'accounts.openai.com']
+      .includes(String(parsed.hostname || '').toLowerCase());
+  } catch {
+    signupAuthHost = false;
+  }
+
+  return {
+    url: location.href,
+    retryPage: Boolean(retryState),
+    retryEnabled: Boolean(retryState?.retryEnabled),
+    maxCheckAttemptsBlocked: Boolean(retryState?.maxCheckAttemptsBlocked),
+    userAlreadyExistsBlocked: Boolean(retryState?.userAlreadyExistsBlocked),
+    successState: successState?.state || '',
+    profileVisible: isStep5ProfileStillVisible(),
+    errorText,
+    unknownAuthPage: Boolean(
+      signupAuthHost
+      && !retryState
+      && !successState
+      && !isStep5ProfileStillVisible()
+    ),
+  };
+}
+
+async function recoverStep5SubmitRetryPage(payload = {}) {
+  return recoverCurrentAuthRetryPage({
+    ...payload,
+    flow: 'signup',
+    logLabel: payload?.logLabel || '步骤 5：资料提交后检测到认证重试页，正在点击“重试”恢复',
+    maxClickAttempts: payload?.maxClickAttempts ?? 2,
+    pathPatterns: Array.isArray(payload?.pathPatterns) ? payload.pathPatterns : getStep5AuthRetryPathPatterns(),
+    step: 5,
+    timeoutMs: payload?.timeoutMs ?? 12000,
+  });
 }
 
 function installStep5NavigationCompletionReporter(completeOnce) {
