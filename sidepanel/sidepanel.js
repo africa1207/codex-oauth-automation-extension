@@ -8065,6 +8065,39 @@ function scheduleSettingsAutoSave() {
   }, 500);
 }
 
+function registerSettingsTextInputs(inputs = [], options = {}) {
+  const normalizeOnBlur = typeof options.normalizeOnBlur === 'function'
+    ? options.normalizeOnBlur
+    : null;
+  inputs.forEach((input) => {
+    input?.addEventListener('input', () => {
+      markSettingsDirty(true);
+      scheduleSettingsAutoSave();
+    });
+    input?.addEventListener('blur', () => {
+      if (normalizeOnBlur) {
+        normalizeOnBlur(input);
+      }
+      saveSettings({ silent: true }).catch(() => { });
+    });
+  });
+}
+
+function registerSettingsChangeAutoSave(inputs = [], options = {}) {
+  const onChange = typeof options.onChange === 'function'
+    ? options.onChange
+    : null;
+  inputs.forEach((input) => {
+    input?.addEventListener('change', () => {
+      if (onChange) {
+        onChange(input);
+      }
+      markSettingsDirty(true);
+      saveSettings({ silent: true }).catch(() => { });
+    });
+  });
+}
+
 async function saveSettings(options = {}) {
   const { silent = false, force = false } = options;
   clearTimeout(settingsAutoSaveTimer);
@@ -11808,30 +11841,31 @@ inputVpsPassword.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
 });
 
-[inputHotmailRemoteBaseUrl, inputHotmailLocalBaseUrl].forEach((input) => {
-  input?.addEventListener('input', () => {
-    markSettingsDirty(true);
-    scheduleSettingsAutoSave();
-  });
-  input?.addEventListener('blur', () => {
-    saveSettings({ silent: true }).catch(() => { });
-  });
-});
+registerSettingsTextInputs([inputHotmailRemoteBaseUrl, inputHotmailLocalBaseUrl]);
 
-[inputLuckmailApiKey, inputLuckmailBaseUrl, inputLuckmailDomain].forEach((input) => {
-  input?.addEventListener('input', () => {
-    markSettingsDirty(true);
-    scheduleSettingsAutoSave();
-  });
-  input?.addEventListener('blur', () => {
-    saveSettings({ silent: true }).catch(() => { });
-  });
-});
+registerSettingsTextInputs([inputLuckmailApiKey, inputLuckmailBaseUrl, inputLuckmailDomain]);
 
 selectLuckmailEmailType?.addEventListener('change', () => {
   markSettingsDirty(true);
   saveSettings({ silent: true }).catch(() => { });
 });
+
+registerSettingsTextInputs([
+  inputCloudMailBaseUrl,
+  inputCloudMailAdminEmail,
+  inputCloudMailAdminPassword,
+  inputCloudMailReceiveMailbox,
+  inputCloudMailDomain,
+]);
+
+registerSettingsTextInputs([
+  inputOutlookEmailPlusBaseUrl,
+  inputOutlookEmailPlusApiKey,
+  inputOutlookEmailPlusCallerId,
+  inputOutlookEmailPlusProjectKey,
+]);
+
+registerSettingsChangeAutoSave([selectOutlookEmailPlusPoolProvider]);
 
 inputPassword.addEventListener('input', () => {
   markSettingsDirty(true);

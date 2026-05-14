@@ -1,8 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 
 const outlookEmailPlusUtils = require('../outlook-email-plus-utils.js');
 require('../background/outlook-email-plus-provider.js');
+
+test('background wires OutlookEmailPlus project key normalizer into startup assembly', () => {
+  const source = fs.readFileSync('background.js', 'utf8');
+
+  assert.match(
+    source,
+    /const\s*\{[\s\S]*normalizeOutlookEmailPlusProjectKey,[\s\S]*\}\s*=\s*self\.OutlookEmailPlusUtils;/
+  );
+  assert.match(
+    source,
+    /createOutlookEmailPlusProvider\(\{[\s\S]*normalizeOutlookEmailPlusProjectKey,[\s\S]*\}\);/
+  );
+  assert.match(
+    source,
+    /case 'outlookEmailPlusProjectKey':\s*return normalizeOutlookEmailPlusProjectKey\(value\);/
+  );
+});
 
 function createProviderApi(options = {}) {
   let currentState = {

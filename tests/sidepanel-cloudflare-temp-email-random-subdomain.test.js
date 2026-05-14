@@ -198,6 +198,13 @@ const rowTempEmailReceiveMailbox = ${JSON.stringify(createRow('none'))};
 const rowTempEmailRandomSubdomainToggle = ${JSON.stringify(createRow('none'))};
 const rowTempEmailDomain = ${JSON.stringify(createRow('none'))};
 const cloudflareTempEmailSection = ${JSON.stringify(createRow('none'))};
+const cloudMailSection = ${JSON.stringify(createRow('none'))};
+const rowCloudMailBaseUrl = ${JSON.stringify(createRow('none'))};
+const rowCloudMailAdminEmail = ${JSON.stringify(createRow('none'))};
+const rowCloudMailAdminPassword = ${JSON.stringify(createRow('none'))};
+const rowCloudMailReceiveMailbox = ${JSON.stringify(createRow('none'))};
+const rowCloudMailDomain = ${JSON.stringify(createRow('none'))};
+const outlookEmailPlusSection = ${JSON.stringify(createRow('none'))};
 const hotmailSection = ${JSON.stringify(createRow('none'))};
 const mail2925Section = ${JSON.stringify(createRow('none'))};
 const luckmailSection = ${JSON.stringify(createRow('none'))};
@@ -221,6 +228,7 @@ const calls = {
   tempDomainEditMode: [],
 };
 function isLuckmailProvider() { return false; }
+function isOutlookEmailPlusProvider() { return false; }
 function isCustomMailProvider() { return false; }
 function isIcloudMailProvider() { return false; }
 function usesGeneratedAliasMailProvider() { return false; }

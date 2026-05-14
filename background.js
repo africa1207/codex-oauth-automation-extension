@@ -176,6 +176,7 @@ const {
   normalizeOutlookEmailPlusCurrentClaim,
   normalizeOutlookEmailPlusEmail,
   normalizeOutlookEmailPlusPoolProvider,
+  normalizeOutlookEmailPlusProjectKey,
 } = self.OutlookEmailPlusUtils;
 const {
   DEFAULT_MAIL_PAGE_SIZE: CLOUDFLARE_TEMP_EMAIL_DEFAULT_PAGE_SIZE,
@@ -2333,6 +2334,7 @@ const outlookEmailPlusProvider = self.MultiPageBackgroundOutlookEmailPlusProvide
   normalizeOutlookEmailPlusCurrentClaim,
   normalizeOutlookEmailPlusEmail,
   normalizeOutlookEmailPlusPoolProvider,
+  normalizeOutlookEmailPlusProjectKey,
   OUTLOOK_EMAIL_PLUS_PROVIDER,
   setEmailState,
   setState,
